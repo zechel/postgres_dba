@@ -67,6 +67,7 @@ select
       )::text || '%)'
     else 'no access'
   end as "Size",
+  stats_reset::timestamptz(0)::text as "Stats Since",
   (now() - stats_reset)::interval(0)::text as "Stats Age",
   case
     when blks_hit + blks_read > 0 then
