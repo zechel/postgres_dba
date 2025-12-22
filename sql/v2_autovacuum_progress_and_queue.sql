@@ -40,13 +40,14 @@ select
   psat.n_dead_tup,
   'vt: ' || vacuum_settings.autovacuum_vacuum_threshold
     || ', vsf: ' || vacuum_settings.autovacuum_vacuum_scale_factor
-    || case when not autovacuum_enabled then ', DISABLED' else ', enabled' end as "effective_settings",
+    || ', av: ' || case when not autovacuum_enabled then 'off' else 'on' end as "effective_settings",
   case
     when last_autovacuum > coalesce(last_vacuum, '0001-01-01') then left(last_autovacuum::text, 19) || ' (auto)'
     when last_vacuum is not null then left(last_vacuum::text, 19) || ' (manual)'
     else null
   end as "last_vacuumed",
-  coalesce(p.phase, '~~~ in queue ~~~') as status,
+  p.phase as status,
+  -- coalesce(p.phase, '~~~ in queue ~~~') as status,
   p.pid as pid,
   case
     when a.query ~ '^autovacuum.*to prevent wraparound' then 'wraparound'

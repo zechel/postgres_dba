@@ -94,12 +94,11 @@ with step1 as (
 )
 select
   case is_na when true then 'TRUE' else '' end as "Is N/A",
+  table_name as "Table Name",
   format(
-    $out$%s
-  (%s)$out$,
-    left(index_name, 50) || case when length(index_name) > 50 then '…' else '' end,
-    coalesce(nullif(schema_name, 'public') || '.', '') || table_name
-  ) as "Index (Table)",
+    $out$%s $out$,
+    left(index_name, 50) || case when length(index_name) > 50 then '…' else '' end
+  ) as "Index",
   pg_size_pretty(real_size::numeric) as "Size",
   case
     when extra_size::numeric >= 0

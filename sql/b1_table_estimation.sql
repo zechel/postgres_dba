@@ -89,6 +89,10 @@ select
     || case greatest(last_autovacuum, last_vacuum)
       when last_autovacuum then ' (auto)'
     else '' end as "Last Vaccuum",
+  greatest(last_autoanalyze, last_analyze)::timestamp(0)::text 
+    || case greatest(last_autoanalyze, last_analyze)
+      when last_autoanalyze then ' (auto)'
+    else '' end as "Last Analyze",
   (
     select
       coalesce(substring(array_to_string(reloptions, ' ') from 'fillfactor=([0-9]+)')::smallint, 100)

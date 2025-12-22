@@ -1,4 +1,4 @@
---Load profile
+--Table Stats
 
 with data as (
   select
