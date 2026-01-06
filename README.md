@@ -90,7 +90,7 @@ The installation is trivial. Clone the repository and put "dba" alias to your `.
 ```bash
 git clone https://github.com/NikolayS/postgres_dba.git
 cd postgres_dba
-printf "%s %s %s %s\n" \\echo 🧐 🐘 'postgres_dba 18.0 installed. Use ":dba" to see menu' >> ~/.psqlrc
+printf "%s %s %s %s\n" \\echo 'postgres_dba installed. Use ":dba" to see menu' >> ~/.psqlrc
 printf "%s %s %s %s\n" \\set dba \'\\\\i $(pwd)/start.psql\' >> ~/.psqlrc
 ```
 
