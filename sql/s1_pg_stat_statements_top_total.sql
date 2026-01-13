@@ -1,4 +1,4 @@
---Slowest queries, by total time (requires pg_stat_statements) - PG16-
+--Slowest queries, by total time (requires pg_stat_statements)
 
 -- In pg_stat_statements, there is a problem: sometimes (quite often), it registers the same query twice (or even more).
 -- It's easy to check in your DB:
@@ -38,7 +38,6 @@ select
     round(min(min_time)::numeric, 2), 
     round(max(max_time)::numeric, 2)
   ) as min_max_t,
-  -- stddev_time, -- https://stats.stackexchange.com/questions/55999/is-it-possible-to-find-the-combined-standard-deviation
 \endif
   sum(rows) as rows,
   (select usename from pg_user where usesysid = userid) as usr,
@@ -54,9 +53,14 @@ select
   sum(local_blks_written) as local_blks_written,
   sum(temp_blks_read) as temp_blks_read,
   sum(temp_blks_written) as temp_blks_written,
+\if :postgres_dba_pgvers_17plus
+  sum(local_blk_read_time) as local_blk_read_time,
+  sum(local_blk_write_time) as local_blk_write_time,
+\else
   sum(blk_read_time) as blk_read_time,
   sum(blk_write_time) as blk_write_time,
-  array_agg(queryid) as queryids -- 9.4+
+\endif
+  array_agg(queryid) as queryids
 from pg_stat_statements
 group by userid, dbid, query
 \if :postgres_dba_pgvers_13plus

@@ -1,4 +1,4 @@
---Slowest queries report (requires pg_stat_statements) - PG16-
+--Slowest queries report (requires pg_stat_statements)
 
 --Original version – Data Egret: https://github.com/dataegret/pg-utils/blob/master/sql/global_reports/query_stat_total.sql
 \if :postgres_dba_pgvers_13plus
@@ -37,8 +37,13 @@ with pg_stat_statements_slice as (
 ), totals as (
   select
     sum(total_exec_time) as total_exec_time,
+\if :postgres_dba_pgvers_17plus
+    sum(local_blk_read_time+local_blk_write_time) as io_time,
+    sum(total_exec_time-local_blk_read_time-local_blk_write_time) as non_io_time,
+\else
     sum(blk_read_time+blk_write_time) as io_time,
     sum(total_exec_time-blk_read_time-blk_write_time) as non_io_time,
+\endif
     sum(calls) as ncalls,
     sum(rows) as total_rows
   from pg_stat_statements_slice
@@ -60,7 +65,11 @@ with pg_stat_statements_slice as (
       8192
     ) as query,
     sum(total_exec_time) as total_exec_time,
+\if :postgres_dba_pgvers_17plus
+    sum(local_blk_read_time) as local_blk_read_time, sum(local_blk_write_time) as local_blk_write_time,
+\else
     sum(blk_read_time) as blk_read_time, sum(blk_write_time) as blk_write_time,
+\endif
     sum(calls) as calls, sum(rows) as rows
   from pg_stat_statements_normalized p
   group by dbid, userid, md5(query_normalized)
@@ -74,12 +83,22 @@ with pg_stat_statements_slice as (
 ), statements as (
   select
     (100*total_exec_time/(select total_exec_time from totals)) as time_percent,
+\if :postgres_dba_pgvers_17plus
+    (100*(local_blk_read_time+local_blk_write_time)/(select greatest(io_time, 1) from totals)) as io_time_percent,
+    (100*(total_exec_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals)) as non_io_time_percent,
+\else
     (100*(blk_read_time+blk_write_time)/(select greatest(io_time, 1) from totals)) as io_time_percent,
     (100*(total_exec_time-blk_read_time-blk_write_time)/(select non_io_time from totals)) as non_io_time_percent,
+\endif
     to_char(interval '1 millisecond' * total_exec_time, 'HH24:MI:SS') as total_exec_time,
     (total_exec_time::numeric/calls)::numeric(20,2) as avg_time,
+\if :postgres_dba_pgvers_17plus
+    ((total_exec_time-local_blk_read_time-local_blk_write_time)::numeric/calls)::numeric(20, 2) as avg_non_io_time,
+    ((local_blk_read_time+local_blk_write_time)::numeric/calls)::numeric(20, 2) as avg_io_time,
+\else
     ((total_exec_time-blk_read_time-blk_write_time)::numeric/calls)::numeric(20, 2) as avg_non_io_time,
     ((blk_read_time+blk_write_time)::numeric/calls)::numeric(20, 2) as avg_io_time,
+\endif
     to_char(calls, 'FM999,999,999,990') as calls,
     (100*calls/(select ncalls from totals))::numeric(20, 2) as calls_percent,
     to_char(rows, 'FM999,999,999,990') as rows,
@@ -89,8 +108,13 @@ with pg_stat_statements_slice as (
     query
   from _pg_stat_statements
   where
+\if :postgres_dba_pgvers_17plus
+    (total_exec_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals) >= 0.01
+    or (local_blk_read_time+local_blk_write_time)/(
+\else
     (total_exec_time-blk_read_time-blk_write_time)/(select non_io_time from totals) >= 0.01
     or (blk_read_time+blk_write_time)/(
+\endif
       select greatest(io_time, 1) from totals
     ) >= 0.01
     or calls/(select ncalls from totals) >= 0.02
@@ -98,12 +122,22 @@ with pg_stat_statements_slice as (
   union all
   select
     (100*sum(total_exec_time)::numeric/(select total_exec_time from totals)) as time_percent,
+\if :postgres_dba_pgvers_17plus
+    (100*sum(local_blk_read_time+local_blk_write_time)::numeric/(select greatest(io_time, 1) from totals)) as io_time_percent,
+    (100*sum(total_exec_time-local_blk_read_time-local_blk_write_time)::numeric/(select non_io_time from totals)) as non_io_time_percent,
+\else
     (100*sum(blk_read_time+blk_write_time)::numeric/(select greatest(io_time, 1) from totals)) as io_time_percent,
     (100*sum(total_exec_time-blk_read_time-blk_write_time)::numeric/(select non_io_time from totals)) as non_io_time_percent,
+\endif
     to_char(interval '1 millisecond' * sum(total_exec_time), 'HH24:MI:SS') as total_exec_time,
     (sum(total_exec_time)::numeric/sum(calls))::numeric(20,2) as avg_time,
+\if :postgres_dba_pgvers_17plus
+    (sum(total_exec_time-local_blk_read_time-local_blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_non_io_time,
+    (sum(local_blk_read_time+local_blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_io_time,
+\else
     (sum(total_exec_time-blk_read_time-blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_non_io_time,
     (sum(blk_read_time+blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_io_time,
+\endif
     to_char(sum(calls), 'FM999,999,999,990') as calls,
     (100*sum(calls)/(select ncalls from totals))::numeric(20, 2) as calls_percent,
     to_char(sum(rows), 'FM999,999,999,990') as rows,
@@ -114,8 +148,13 @@ with pg_stat_statements_slice as (
   from _pg_stat_statements
   where
     not (
+\if :postgres_dba_pgvers_17plus
+      (total_exec_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals) >= 0.01
+      or (local_blk_read_time+local_blk_write_time)/(select greatest(io_time, 1) from totals) >= 0.01
+\else
       (total_exec_time-blk_read_time-blk_write_time)/(select non_io_time from totals) >= 0.01
       or (blk_read_time+blk_write_time)/(select greatest(io_time, 1) from totals) >= 0.01
+\endif
       or calls/(select ncalls from totals)>=0.02 or rows/(select total_rows from totals) >= 0.02
     )
 ), statements_readable as (
@@ -196,8 +235,13 @@ with pg_stat_statements_slice as (
 ), totals as (
   select
     sum(total_time) as total_time,
+\if :postgres_dba_pgvers_17plus
+    sum(local_blk_read_time+local_blk_write_time) as io_time,
+    sum(total_time-local_blk_read_time-local_blk_write_time) as non_io_time,
+\else
     sum(blk_read_time+blk_write_time) as io_time,
     sum(total_time-blk_read_time-blk_write_time) as non_io_time,
+\endif
     sum(calls) as ncalls,
     sum(rows) as total_rows
   from pg_stat_statements_slice
@@ -219,7 +263,11 @@ with pg_stat_statements_slice as (
       8192
     ) as query,
     sum(total_time) as total_time,
+\if :postgres_dba_pgvers_17plus
+    sum(local_blk_read_time) as local_blk_read_time, sum(local_blk_write_time) as local_blk_write_time,
+\else
     sum(blk_read_time) as blk_read_time, sum(blk_write_time) as blk_write_time,
+\endif
     sum(calls) as calls, sum(rows) as rows
   from pg_stat_statements_normalized p
   group by dbid, userid, md5(query_normalized)
@@ -233,12 +281,22 @@ with pg_stat_statements_slice as (
 ), statements as (
   select
     (100*total_time/(select total_time from totals)) as time_percent,
+\if :postgres_dba_pgvers_17plus
+    (100*(local_blk_read_time+local_blk_write_time)/(select greatest(io_time, 1) from totals)) as io_time_percent,
+    (100*(total_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals)) as non_io_time_percent,
+\else
     (100*(blk_read_time+blk_write_time)/(select greatest(io_time, 1) from totals)) as io_time_percent,
     (100*(total_time-blk_read_time-blk_write_time)/(select non_io_time from totals)) as non_io_time_percent,
+\endif
     to_char(interval '1 millisecond' * total_time, 'HH24:MI:SS') as total_time,
     (total_time::numeric/calls)::numeric(20,2) as avg_time,
+\if :postgres_dba_pgvers_17plus
+    ((total_time-local_blk_read_time-local_blk_write_time)::numeric/calls)::numeric(20, 2) as avg_non_io_time,
+    ((local_blk_read_time+local_blk_write_time)::numeric/calls)::numeric(20, 2) as avg_io_time,
+\else
     ((total_time-blk_read_time-blk_write_time)::numeric/calls)::numeric(20, 2) as avg_non_io_time,
     ((blk_read_time+blk_write_time)::numeric/calls)::numeric(20, 2) as avg_io_time,
+\endif
     to_char(calls, 'FM999,999,999,990') as calls,
     (100*calls/(select ncalls from totals))::numeric(20, 2) as calls_percent,
     to_char(rows, 'FM999,999,999,990') as rows,
@@ -248,8 +306,13 @@ with pg_stat_statements_slice as (
     query
   from _pg_stat_statements
   where
+\if :postgres_dba_pgvers_17plus
+    (total_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals) >= 0.01
+    or (local_blk_read_time+local_blk_write_time)/(
+\else
     (total_time-blk_read_time-blk_write_time)/(select non_io_time from totals) >= 0.01
     or (blk_read_time+blk_write_time)/(
+\endif
       select greatest(io_time, 1) from totals
     ) >= 0.01
     or calls/(select ncalls from totals) >= 0.02
@@ -257,12 +320,22 @@ with pg_stat_statements_slice as (
   union all
   select
     (100*sum(total_time)::numeric/(select total_time from totals)) as time_percent,
+\if :postgres_dba_pgvers_17plus
+    (100*sum(local_blk_read_time+local_blk_write_time)::numeric/(select greatest(io_time, 1) from totals)) as io_time_percent,
+    (100*sum(total_time-local_blk_read_time-local_blk_write_time)::numeric/(select non_io_time from totals)) as non_io_time_percent,
+\else
     (100*sum(blk_read_time+blk_write_time)::numeric/(select greatest(io_time, 1) from totals)) as io_time_percent,
     (100*sum(total_time-blk_read_time-blk_write_time)::numeric/(select non_io_time from totals)) as non_io_time_percent,
+\endif
     to_char(interval '1 millisecond' * sum(total_time), 'HH24:MI:SS') as total_time,
     (sum(total_time)::numeric/sum(calls))::numeric(20,2) as avg_time,
+\if :postgres_dba_pgvers_17plus
+    (sum(total_time-local_blk_read_time-local_blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_non_io_time,
+    (sum(local_blk_read_time+local_blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_io_time,
+\else
     (sum(total_time-blk_read_time-blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_non_io_time,
     (sum(blk_read_time+blk_write_time)::numeric/sum(calls))::numeric(20, 2) as avg_io_time,
+\endif
     to_char(sum(calls), 'FM999,999,999,990') as calls,
     (100*sum(calls)/(select ncalls from totals))::numeric(20, 2) as calls_percent,
     to_char(sum(rows), 'FM999,999,999,990') as rows,
@@ -273,8 +346,13 @@ with pg_stat_statements_slice as (
   from _pg_stat_statements
   where
     not (
+\if :postgres_dba_pgvers_17plus
+      (total_time-local_blk_read_time-local_blk_write_time)/(select non_io_time from totals) >= 0.01
+      or (local_blk_read_time+local_blk_write_time)/(select greatest(io_time, 1) from totals) >= 0.01
+\else
       (total_time-blk_read_time-blk_write_time)/(select non_io_time from totals) >= 0.01
       or (blk_read_time+blk_write_time)/(select greatest(io_time, 1) from totals) >= 0.01
+\endif
       or calls/(select ncalls from totals)>=0.02 or rows/(select total_rows from totals) >= 0.02
     )
 ), statements_readable as (

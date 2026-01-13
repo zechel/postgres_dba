@@ -24,10 +24,8 @@
 \echo '  l2 – Lock trees, detailed (based on pg_blocking_pids())'
 \echo '  p1 – How many bytes can be saved if columns are reordered?'
 \echo '  r1 – Replication status'
-\echo '  s1 – Slowest queries, by total time (requires pg_stat_statements) - PG16-'
-\echo '  s2 – Slowest queries report (requires pg_stat_statements) - PG16-'
-\echo '  s3 – Slowest queries, by total time (requires pg_stat_statements) - PG17+'
-\echo '  s4 – Slowest queries report (requires pg_stat_statements) - PG17+'
+\echo '  s1 – Slowest queries, by total time (requires pg_stat_statements)'
+\echo '  s2 – Slowest queries report (requires pg_stat_statements)'
 \echo '  t1 – Postgres parameters'
 \echo '  u1 – Create user with random password (interactive)'
 \echo '  u2 – Alter user with random password (interactive)'
@@ -65,8 +63,6 @@ select
 :d_stp::text = 'r1' as d_step_is_r1,
 :d_stp::text = 's1' as d_step_is_s1,
 :d_stp::text = 's2' as d_step_is_s2,
-:d_stp::text = 's3' as d_step_is_s3,
-:d_stp::text = 's4' as d_step_is_s4,
 :d_stp::text = 't1' as d_step_is_t1,
 :d_stp::text = 'u1' as d_step_is_u1,
 :d_stp::text = 'u2' as d_step_is_u2,
@@ -178,14 +174,6 @@ select
   \ir ./start.psql
 \elif :d_step_is_s2
   \ir ./sql/s2_pg_stat_statements_report.sql
-  \prompt 'Press <Enter> to continue…' d_dummy
-  \ir ./start.psql
-\elif :d_step_is_s3
-  \ir ./sql/s3_pg_stat_statements_top_total.sql
-  \prompt 'Press <Enter> to continue…' d_dummy
-  \ir ./start.psql
-\elif :d_step_is_s4
-  \ir ./sql/s4_pg_stat_statements_report.sql
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \elif :d_step_is_t1
