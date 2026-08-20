@@ -1,46 +1,42 @@
---Slowest queries, by total time (requires pg_stat_statements)
+--Slowest queries by total time (PG 9.6+; requires pg_stat_statements)
 
--- In pg_stat_statements, there is a problem: sometimes (quite often), it registers the same query twice (or even more).
--- It's easy to check in your DB:
---
---   with heh as (
---     select userid, dbid, query, count(*), array_agg(queryid) queryids
---     from pg_stat_statements group by 1, 2, 3 having count(*) > 1
---  ) select left(query, 85) || '...', userid, dbid, count, queryids from heh;
---
--- This query gives you "full picture", aggregating stats for each query-database-username ternary
+-- Aggregates duplicate entries with the same query text, database and user.
+-- Timing column aliases are defined in warmup.psql so this query remains a
+-- single implementation across PostgreSQL versions.
 
--- Works with Postgres 9.6+
+select to_regclass('pg_stat_statements') is not null
+  as postgres_dba_has_pg_stat_statements \gset
 
+\if :postgres_dba_has_pg_stat_statements
 select
   sum(calls) as calls,
+  round(sum(:postgres_dba_pgss_total_time)::numeric, 2) as total_exec_time_ms,
+  round(
+    (
+      sum(:postgres_dba_pgss_mean_time * calls)
+      / nullif(sum(calls), 0)
+    )::numeric,
+    2
+  ) as mean_exec_time_ms,
+  format(
+    '%s–%s',
+    round(min(:postgres_dba_pgss_min_time)::numeric, 2),
+    round(max(:postgres_dba_pgss_max_time)::numeric, 2)
+  ) as min_max_exec_time_ms,
 \if :postgres_dba_pgvers_13plus
-  round(sum(total_exec_time)::numeric, 2) as total_exec_t,
-  round((sum(mean_exec_time * calls) / sum(calls))::numeric, 2) as mean_exec_t,
+  round(sum(total_plan_time)::numeric, 2) as total_plan_time_ms,
+  round(
+    (sum(mean_plan_time * plans) / nullif(sum(plans), 0))::numeric,
+    2
+  ) as mean_plan_time_ms,
   format(
     '%s–%s',
-    round(min(min_exec_time)::numeric, 2), 
-    round(max(max_exec_time)::numeric, 2)
-  ) as min_max_exec_t,
-  round(sum(total_plan_time)::numeric, 2) as total_plan_t,
-  round((sum(mean_plan_time * calls) / sum(calls))::numeric, 2) as mean_plan_t,
-  format(
-    '%s–%s',
-    round(min(min_plan_time)::numeric, 2), 
+    round(min(min_plan_time)::numeric, 2),
     round(max(max_plan_time)::numeric, 2)
-  ) as min_max_plan_t,
-\else
-  sum(calls) as calls,
-  round(sum(total_time)::numeric, 2) as total_time,
-  round((sum(mean_time * calls) / sum(calls))::numeric, 2) as mean_time,
-  format(
-    '%s–%s',
-    round(min(min_time)::numeric, 2), 
-    round(max(max_time)::numeric, 2)
-  ) as min_max_t,
+  ) as min_max_plan_time_ms,
 \endif
   sum(rows) as rows,
-  (select usename from pg_user where usesysid = userid) as usr,
+  pg_get_userbyid(userid) as usr,
   (select datname from pg_database where oid = dbid) as db,
   query,
   sum(shared_blks_hit) as shared_blks_hit,
@@ -53,19 +49,14 @@ select
   sum(local_blks_written) as local_blks_written,
   sum(temp_blks_read) as temp_blks_read,
   sum(temp_blks_written) as temp_blks_written,
-\if :postgres_dba_pgvers_17plus
-  sum(local_blk_read_time) as local_blk_read_time,
-  sum(local_blk_write_time) as local_blk_write_time,
-\else
-  sum(blk_read_time) as blk_read_time,
-  sum(blk_write_time) as blk_write_time,
-\endif
-  array_agg(queryid) as queryids
+  round(sum(:postgres_dba_pgss_read_time)::numeric, 2) as io_read_time_ms,
+  round(sum(:postgres_dba_pgss_write_time)::numeric, 2) as io_write_time_ms,
+  array_agg(distinct queryid) as queryids
 from pg_stat_statements
 group by userid, dbid, query
-\if :postgres_dba_pgvers_13plus
-order by sum(total_exec_time) desc
-\else
-order by sum(total_time) desc
-\endif
+order by sum(:postgres_dba_pgss_total_time) desc
 limit 50;
+\else
+  \echo 'pg_stat_statements is not available in the current search_path.'
+  \echo 'Install it in this database or add its schema to search_path.'
+\endif

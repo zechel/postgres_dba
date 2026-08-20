@@ -8,6 +8,29 @@ select current_setting('server_version_num')::integer >= 170000 as postgres_dba_
 
 select current_setting('server_version_num')::integer >= 130000 as postgres_dba_pgvers_13plus \gset
 
+-- Keep version-specific pg_stat_statements column names out of the reports.
+-- PostgreSQL 13 renamed the execution-time columns and PostgreSQL 17 split
+-- shared and local I/O timing.
+\if :postgres_dba_pgvers_13plus
+  \set postgres_dba_pgss_total_time total_exec_time
+  \set postgres_dba_pgss_mean_time mean_exec_time
+  \set postgres_dba_pgss_min_time min_exec_time
+  \set postgres_dba_pgss_max_time max_exec_time
+\else
+  \set postgres_dba_pgss_total_time total_time
+  \set postgres_dba_pgss_mean_time mean_time
+  \set postgres_dba_pgss_min_time min_time
+  \set postgres_dba_pgss_max_time max_time
+\endif
+
+\if :postgres_dba_pgvers_17plus
+  \set postgres_dba_pgss_read_time 'shared_blk_read_time + local_blk_read_time'
+  \set postgres_dba_pgss_write_time 'shared_blk_write_time + local_blk_write_time'
+\else
+  \set postgres_dba_pgss_read_time blk_read_time
+  \set postgres_dba_pgss_write_time blk_write_time
+\endif
+
 select current_setting('server_version_num')::integer >= 100000 as postgres_dba_pgvers_10plus \gset
 \if :postgres_dba_pgvers_10plus
   \set postgres_dba_last_wal_receive_lsn pg_last_wal_receive_lsn
@@ -17,6 +40,13 @@ select current_setting('server_version_num')::integer >= 100000 as postgres_dba_
   \set postgres_dba_last_wal_receive_lsn pg_last_xlog_receive_location
   \set postgres_dba_last_wal_replay_lsn pg_last_xlog_replay_location
   \set postgres_dba_is_wal_replay_paused pg_is_xlog_replay_paused
+\endif
+
+select pg_is_in_recovery() as postgres_dba_is_replica \gset
+\if :postgres_dba_is_replica
+  \set postgres_dba_current_wal_lsn pg_last_wal_receive_lsn
+\else
+  \set postgres_dba_current_wal_lsn pg_current_wal_lsn
 \endif
 
 -- TODO: improve work with custom GUCs for Postgres 9.5 and older

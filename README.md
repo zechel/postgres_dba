@@ -135,12 +135,29 @@ And then:
 
 ## Key Features
 
+### Rapid Incident Diagnostics
+
+The interactive menu includes read-only checks designed for fast triage on
+customer environments:
+
+- **a3** – Connection capacity, utilization, remaining and reserved slots
+- **a4** – Blocked sessions, long transactions, long queries and
+  idle-in-transaction sessions
+- **i7** – Largest tables without primary keys
+- **r1** – Replication status, automatically adapted to primary or replica
+- **r2** – Replication slots, retained WAL and transaction horizons
+- **v3** – XID and MXID wraparound risk by database and table
+
+The **s1** and **s2** `pg_stat_statements` reports use one implementation for
+all supported server versions. They automatically map renamed timing columns
+and include both shared and local I/O timing on PostgreSQL 17 and newer.
+
 ### Secure Role Management
 
 **postgres_dba** includes interactive tools for secure role (user) management:
 
-- **r1** – Create user with random password (interactive)
-- **r2** – Alter user with random password (interactive)
+- **u1** – Create user with random password (interactive)
+- **u2** – Alter user with random password (interactive)
 
 These tools help prevent password exposure in psql history, logs, and command-line process lists by:
 - Generating secure random 16-character passwords
@@ -150,7 +167,7 @@ These tools help prevent password exposure in psql history, logs, and command-li
 **Usage example:**
 ```sql
 -- In psql, after launching :dba
--- Select option r1 to create a new user
+-- Select option u1 to create a new user
 -- The script will prompt you for:
 --   - Username
 --   - Superuser privilege (yes/no)
