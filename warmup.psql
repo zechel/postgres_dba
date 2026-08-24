@@ -8,6 +8,12 @@ select current_setting('server_version_num')::integer >= 170000 as postgres_dba_
 
 select current_setting('server_version_num')::integer >= 130000 as postgres_dba_pgvers_13plus \gset
 
+-- Reports are interactive by default; automation overrides this with -v.
+\if :{?postgres_dba_interactive_mode}
+\else
+  \set postgres_dba_interactive_mode true
+\endif
+
 -- Keep version-specific pg_stat_statements column names out of the reports.
 -- PostgreSQL 13 renamed the execution-time columns and PostgreSQL 17 split
 -- shared and local I/O timing.

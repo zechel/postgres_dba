@@ -1,6 +1,10 @@
 --Queries running more than "N" seconds (Type the number of seconds)
 
-\prompt 'Queries Running More Than "N" Seconds: ' postgres_number_seconds
+\if :postgres_dba_interactive_mode
+  \prompt 'Queries Running More Than "N" Seconds: ' postgres_number_seconds
+\else
+  \set postgres_number_seconds 0
+\endif
 
 SELECT pid, usename, datname, state, application_name, client_addr, age(query_start, clock_timestamp()), substring(query,1,40) as query
 FROM pg_stat_activity 

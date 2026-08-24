@@ -9,6 +9,46 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    env:
+      AUTOMATED_REPORTS: >-
+        sql/0_node.sql
+        sql/1_databases.sql
+        sql/2_table_sizes.sql
+        sql/3_table_stats.sql
+        sql/a1_activity.sql
+        sql/a2_queries_runing_n_seconds.sql
+        sql/a3_connection_capacity.sql
+        sql/a4_session_risks.sql
+        sql/b1_table_estimation.sql
+        sql/b2_btree_estimation.sql
+        sql/b3_table_pgstattuple.sql
+        sql/b4_btree_pgstattuple.sql
+        sql/b5_tables_no_stats.sql
+        sql/e1_extensions.sql
+        sql/i1_rare_indexes.sql
+        sql/i2_redundant_indexes.sql
+        sql/i3_duplicate_indexes.sql
+        sql/i4_invalid_indexes.sql
+        sql/i5_indexes_migration.sql
+        sql/i6_non_indexed_fks.sql
+        sql/i7_tables_without_primary_keys.sql
+        sql/l1_lock_trees.sql
+        sql/l2_lock_trees.sql
+        sql/p1_alignment_padding.sql
+        sql/r1_replication_status.sql
+        sql/r2_replication_slots.sql
+        sql/s1_pg_stat_statements_top_total.sql
+        sql/s2_pg_stat_statements_report.sql
+        sql/t1_parameters.sql
+        sql/v1_vacuum_activity.sql
+        sql/v2_autovacuum_progress_and_queue.sql
+        sql/v3_wraparound_risk.sql
+      EXCLUDED_REPORTS: >-
+        sql/k1_cancel_pid.sql
+        sql/k2_terminate_pid.sql
+        sql/u1_create_user_with_random_password.sql
+        sql/u2_alter_user_with_random_password.sql
     
     strategy:
       matrix:
@@ -77,18 +117,38 @@ jobs:
         
         # Test connection as dba_user
         psql -h localhost -U dba_user -d test -c 'SELECT current_user, session_user;'
+
+    - name: Validate report automation scope
+      run: |
+        set -euo pipefail
+
+        declare -A declared_reports=()
+        for report in $AUTOMATED_REPORTS $EXCLUDED_REPORTS; do
+          if [[ ! -f "$report" ]]; then
+            echo "Declared report does not exist: $report"
+            exit 1
+          fi
+          declared_reports["$report"]=1
+        done
+
+        while IFS= read -r report; do
+          if [[ -z "${declared_reports[$report]+declared}" ]]; then
+            echo "Report is not classified for automation: $report"
+            exit 1
+          fi
+        done < <(find sql -maxdepth 1 -type f -name '*.sql' -print | sort)
     
     - name: Test wide mode
       run: |
         echo "\set postgres_dba_wide true" > ~/.psqlrc
         echo "\set postgres_dba_interactive_mode false" >> ~/.psqlrc
         echo "Testing all SQL files in wide mode with minimal privileges..."
-        for f in sql/*; do 
+        for f in $AUTOMATED_REPORTS; do
           echo "  Testing $f..."
-          if ! psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f "$f" > /dev/null 2>&1; then
+          if ! psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f" > /dev/null 2>&1; then
             echo "❌ FAILED: $f in wide mode"
             echo "Error output:"
-            psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f "$f"
+            psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f"
             exit 1
           fi
         done
@@ -99,12 +159,12 @@ jobs:
         echo "\set postgres_dba_wide false" > ~/.psqlrc
         echo "\set postgres_dba_interactive_mode false" >> ~/.psqlrc
         echo "Testing all SQL files in normal mode with minimal privileges..."
-        for f in sql/*; do 
+        for f in $AUTOMATED_REPORTS; do
           echo "  Testing $f..."
-          if ! psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f "$f" > /dev/null 2>&1; then
+          if ! psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f" > /dev/null 2>&1; then
             echo "❌ FAILED: $f in normal mode"
             echo "Error output:"
-            psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f "$f"
+            psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f"
             exit 1
           fi
         done
@@ -145,5 +205,3 @@ jobs:
         fi
         
         echo "✅ All regression tests passed with minimal privileges"
-
-
