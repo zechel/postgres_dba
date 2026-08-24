@@ -39,6 +39,7 @@ jobs:
         sql/s1_pg_stat_statements_top_total.sql
         sql/s2_pg_stat_statements_report.sql
         sql/t1_parameters.sql
+        sql/t2_storage_parameters.sql
         sql/v1_vacuum_activity.sql
         sql/v2_autovacuum_progress_and_queue.sql
         sql/v3_wraparound_risk.sql

@@ -159,6 +159,14 @@ The **s1** and **s2** `pg_stat_statements` reports use one implementation for
 all supported server versions. They automatically map renamed timing columns
 and include both shared and local I/O timing on PostgreSQL 17 and newer.
 
+### Configuration inventory
+
+- **t1** lists PostgreSQL server parameters.
+- **t2** lists storage parameters explicitly configured on user tables,
+  indexes, materialized views and partitioned relations. It reports configured
+  values for auditing and troubleshooting; it does not make tuning
+  recommendations.
+
 ### Secure Role Management
 
 **postgres_dba** includes interactive tools for secure role (user) management:

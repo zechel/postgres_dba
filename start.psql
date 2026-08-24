@@ -31,6 +31,7 @@
 \echo '  s1 – Slowest queries by total time (PG 9.6+; requires pg_stat_statements)'
 \echo '  s2 – Slowest queries report (PG 9.6+; requires pg_stat_statements)'
 \echo '  t1 – Postgres parameters'
+\echo '  t2 – Storage parameters explicitly set on relations'
 \echo '  u1 – Create user with random password (interactive)'
 \echo '  u2 – Alter user with random password (interactive)'
 \echo '  v1 – Vacuum: running operations (detailed progress)'
@@ -74,6 +75,7 @@ select
 :d_stp::text = 's1' as d_step_is_s1,
 :d_stp::text = 's2' as d_step_is_s2,
 :d_stp::text = 't1' as d_step_is_t1,
+:d_stp::text = 't2' as d_step_is_t2,
 :d_stp::text = 'u1' as d_step_is_u1,
 :d_stp::text = 'u2' as d_step_is_u2,
 :d_stp::text = 'v1' as d_step_is_v1,
@@ -206,6 +208,10 @@ select
   \ir ./start.psql
 \elif :d_step_is_t1
   \ir ./sql/t1_parameters.sql
+  \prompt 'Press <Enter> to continue…' d_dummy
+  \ir ./start.psql
+\elif :d_step_is_t2
+  \ir ./sql/t2_storage_parameters.sql
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \elif :d_step_is_u1
