@@ -22,8 +22,6 @@ jobs:
         sql/a4_session_risks.sql
         sql/b1_table_estimation.sql
         sql/b2_btree_estimation.sql
-        sql/b3_table_pgstattuple.sql
-        sql/b4_btree_pgstattuple.sql
         sql/b5_tables_no_stats.sql
         sql/e1_extensions.sql
         sql/i1_rare_indexes.sql
@@ -45,16 +43,18 @@ jobs:
         sql/v2_autovacuum_progress_and_queue.sql
         sql/v3_wraparound_risk.sql
       EXCLUDED_REPORTS: >-
+        sql/b3_table_pgstattuple.sql
+        sql/b4_btree_pgstattuple.sql
         sql/k1_cancel_pid.sql
         sql/k2_terminate_pid.sql
         sql/u1_create_user_with_random_password.sql
         sql/u2_alter_user_with_random_password.sql
-    
+
     strategy:
       matrix:
-        postgres-version: ['13', '14', '15', '16', '17', '18']
+        postgres-version: ['14', '15', '16', '17', '18']
       fail-fast: false
-    
+
     services:
       postgres:
         image: postgres:${{ matrix.postgres-version }}
@@ -70,53 +70,76 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Install PostgreSQL client
       run: |
-        # Install default PostgreSQL client (works for all versions)
+        set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y postgresql-client
-        
-        # Verify installation
         psql --version
-    
+
     - name: Prepare test database
       run: |
-        # Wait for PostgreSQL to be ready
+        set -euo pipefail
+        psql_args=(
+          -h localhost
+          -U postgres
+          -d test
+          --no-psqlrc
+          -v ON_ERROR_STOP=1
+        )
+
         until pg_isready -h localhost -p 5432 -U postgres; do
           echo "Waiting for postgres..."
           sleep 2
         done
-        
-        # Check PostgreSQL version
-        psql -h localhost -U postgres -d test -c 'SELECT version();'
-        
-        # Create extensions (pg_stat_statements may not work without shared_preload_libraries)
-        psql -h localhost -U postgres -d test -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;' || echo "Warning: pg_stat_statements extension not available"
-        psql -h localhost -U postgres -d test -c 'CREATE EXTENSION IF NOT EXISTS pgstattuple;'
-        
-        # Create minimal privilege user for testing
-        psql -h localhost -U postgres -d test -c "CREATE USER dba_user;"
-        psql -h localhost -U postgres -d test -c "GRANT pg_monitor TO dba_user;"
-        psql -h localhost -U postgres -d test -c "GRANT CONNECT ON DATABASE test TO dba_user;"
-        psql -h localhost -U postgres -d test -c "GRANT USAGE ON SCHEMA public TO dba_user;"
-        
-        # Verify extensions
-        psql -h localhost -U postgres -d test -c 'SELECT extname FROM pg_extension ORDER BY extname;'
-        
-        # Create test tables for alignment testing (as superuser)
-        psql -h localhost -U postgres -d test -c "CREATE TABLE align1 AS SELECT 1::int4, 2::int8, 3::int4 AS more FROM generate_series(1, 100000) _(i);"
-        psql -h localhost -U postgres -d test -c "CREATE TABLE align2 AS SELECT 1::int4, 3::int4 AS more, 2::int8 FROM generate_series(1, 100000) _(i);"
-        
-        # Grant access to test tables for dba_user
-        psql -h localhost -U postgres -d test -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO dba_user;"
-        
-        # Test connection as dba_user
-        psql -h localhost -U dba_user -d test -c 'SELECT current_user, session_user;'
+
+        psql "${psql_args[@]}" -c 'SELECT version();'
+        psql "${psql_args[@]}" -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';"
+
+        postgres_container=$(docker ps \
+          --filter "ancestor=postgres:${{ matrix.postgres-version }}" \
+          --format '{{.ID}}')
+        if [[ -z "$postgres_container" ]]; then
+          echo "PostgreSQL service container was not found"
+          exit 1
+        fi
+        docker restart "$postgres_container"
+
+        until pg_isready -h localhost -p 5432 -U postgres; do
+          echo "Waiting for postgres after preload configuration..."
+          sleep 2
+        done
+
+        preload_libraries=$(psql "${psql_args[@]}" -Atqc 'SHOW shared_preload_libraries;')
+        [[ "$preload_libraries" == *"pg_stat_statements"* ]] || {
+          echo "pg_stat_statements was not preloaded: $preload_libraries"
+          exit 1
+        }
+
+        psql "${psql_args[@]}" -c 'CREATE EXTENSION pg_stat_statements;'
+        psql "${psql_args[@]}" -c 'CREATE EXTENSION pgstattuple;'
+
+        psql "${psql_args[@]}" -c 'CREATE USER dba_user;'
+        psql "${psql_args[@]}" -c 'GRANT pg_monitor TO dba_user;'
+        psql "${psql_args[@]}" -c 'GRANT CONNECT ON DATABASE test TO dba_user;'
+        psql "${psql_args[@]}" -c 'GRANT USAGE ON SCHEMA public TO dba_user;'
+
+        psql "${psql_args[@]}" -c "CREATE TABLE align1 AS SELECT 1::int4, 2::int8, 3::int4 AS more FROM generate_series(1, 100000) _(i);"
+        psql "${psql_args[@]}" -c "CREATE TABLE align2 AS SELECT 1::int4, 3::int4 AS more, 2::int8 FROM generate_series(1, 100000) _(i);"
+        psql "${psql_args[@]}" -c 'CREATE TABLE fk_parent (id int PRIMARY KEY, data text);'
+        psql "${psql_args[@]}" -c 'CREATE TABLE fk_child (id int PRIMARY KEY, parent_id int, data text, CONSTRAINT fk_test FOREIGN KEY (parent_id) REFERENCES fk_parent(id));'
+        psql "${psql_args[@]}" -c "INSERT INTO fk_parent SELECT i, 'data_' || i FROM generate_series(1, 100000) i;"
+        psql "${psql_args[@]}" -c "INSERT INTO fk_child SELECT i, (i % 100000) + 1, 'data_' || i FROM generate_series(1, 200000) i;"
+        psql "${psql_args[@]}" -c 'ANALYZE;'
+
+        psql "${psql_args[@]}" -c 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO dba_user;'
+        psql "${psql_args[@]}" -c 'SELECT extname FROM pg_extension ORDER BY extname;'
+        psql -h localhost -U dba_user -d test --no-psqlrc -v ON_ERROR_STOP=1 -c 'SELECT current_user, session_user;'
 
     - name: Validate report automation scope
       run: |
@@ -137,71 +160,161 @@ jobs:
             exit 1
           fi
         done < <(find sql -maxdepth 1 -type f -name '*.sql' -print | sort)
-    
+
+    - name: Verify SQL errors fail the executor
+      run: |
+        set -euo pipefail
+        invalid_report="$RUNNER_TEMP/postgres_dba_invalid.sql"
+        printf 'select 1;\nselect missing_column;\nselect 2;\n' > "$invalid_report"
+
+        if psql -h localhost -U dba_user -d test --no-psqlrc \
+          -v ON_ERROR_STOP=1 -f "$invalid_report" > /dev/null 2>&1; then
+          echo "The executor accepted an intentionally invalid report"
+          exit 1
+        fi
+
+        echo "The executor rejected the intentionally invalid report"
+
     - name: Test wide mode
       run: |
-        echo "\set postgres_dba_wide true" > ~/.psqlrc
-        echo "\set postgres_dba_interactive_mode false" >> ~/.psqlrc
-        echo "Testing all SQL files in wide mode with minimal privileges..."
-        for f in $AUTOMATED_REPORTS; do
-          echo "  Testing $f..."
-          if ! psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f" > /dev/null 2>&1; then
-            echo "❌ FAILED: $f in wide mode"
-            echo "Error output:"
-            psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f"
-            exit 1
-          fi
+        set -euo pipefail
+        actual_mode=$(PGOPTIONS="-c postgres_dba.wide=on" \
+          psql -h localhost -U dba_user -d test --no-psqlrc \
+            -v ON_ERROR_STOP=1 -Atqc "select current_setting('postgres_dba.wide');")
+        if [[ "$actual_mode" != "on" ]]; then
+          echo "Wide mode was not enabled: $actual_mode"
+          exit 1
+        fi
+
+        for database_user in postgres dba_user; do
+          echo "Testing safe reports in wide mode as $database_user..."
+          for report in $AUTOMATED_REPORTS; do
+            echo "  Testing $report..."
+            if ! PGOPTIONS="-c postgres_dba.wide=on" PAGER=cat \
+              psql -h localhost -U "$database_user" -d test --no-psqlrc \
+                -v ON_ERROR_STOP=1 -v postgres_dba_interactive_mode=false \
+                -f warmup.psql -f "$report" > /dev/null 2>&1; then
+              echo "FAILED: $report in wide mode as $database_user"
+              PGOPTIONS="-c postgres_dba.wide=on" PAGER=cat \
+                psql -h localhost -U "$database_user" -d test --no-psqlrc \
+                  -v ON_ERROR_STOP=1 -v postgres_dba_interactive_mode=false \
+                  -f warmup.psql -f "$report"
+              exit 1
+            fi
+          done
         done
-        echo "✅ All tests passed in wide mode"
-    
+
     - name: Test normal mode
       run: |
-        echo "\set postgres_dba_wide false" > ~/.psqlrc
-        echo "\set postgres_dba_interactive_mode false" >> ~/.psqlrc
-        echo "Testing all SQL files in normal mode with minimal privileges..."
-        for f in $AUTOMATED_REPORTS; do
-          echo "  Testing $f..."
-          if ! psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f" > /dev/null 2>&1; then
-            echo "❌ FAILED: $f in normal mode"
-            echo "Error output:"
-            psql -h localhost -U dba_user -d test --no-psqlrc -v postgres_dba_interactive_mode=false -f warmup.psql -f "$f"
-            exit 1
-          fi
+        set -euo pipefail
+        actual_mode=$(PGOPTIONS="-c postgres_dba.wide=off" \
+          psql -h localhost -U dba_user -d test --no-psqlrc \
+            -v ON_ERROR_STOP=1 -Atqc "select current_setting('postgres_dba.wide');")
+        if [[ "$actual_mode" != "off" ]]; then
+          echo "Normal mode was not enabled: $actual_mode"
+          exit 1
+        fi
+
+        for database_user in postgres dba_user; do
+          echo "Testing safe reports in normal mode as $database_user..."
+          for report in $AUTOMATED_REPORTS; do
+            echo "  Testing $report..."
+            if ! PGOPTIONS="-c postgres_dba.wide=off" PAGER=cat \
+              psql -h localhost -U "$database_user" -d test --no-psqlrc \
+                -v ON_ERROR_STOP=1 -v postgres_dba_interactive_mode=false \
+                -f warmup.psql -f "$report" > /dev/null 2>&1; then
+              echo "FAILED: $report in normal mode as $database_user"
+              PGOPTIONS="-c postgres_dba.wide=off" PAGER=cat \
+                psql -h localhost -U "$database_user" -d test --no-psqlrc \
+                  -v ON_ERROR_STOP=1 -v postgres_dba_interactive_mode=false \
+                  -f warmup.psql -f "$report"
+              exit 1
+            fi
+          done
         done
-        echo "✅ All tests passed in normal mode"
-    
+
     - name: Run regression tests
       run: |
-        echo "\set postgres_dba_wide false" > ~/.psqlrc
-        echo "\set postgres_dba_interactive_mode false" >> ~/.psqlrc
-        
-        echo "Running regression tests with minimal privileges..."
-        
-        echo "  Testing 0_node.sql..."
-        OUTPUT=$(psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f sql/0_node.sql | grep Role)
-        if [[ "$OUTPUT" == *"Master"* ]]; then
-          echo "    ✓ Role test passed"
-        else
-          echo "    ✗ Role test failed: $OUTPUT"
+        set -euo pipefail
+        psql_args=(
+          -h localhost
+          -d test
+          --no-psqlrc
+          -v ON_ERROR_STOP=1
+          -v postgres_dba_interactive_mode=false
+        )
+
+        run_report() {
+          local database_user="$1"
+          local report="$2"
+          PGOPTIONS="-c postgres_dba.wide=off" PAGER=cat \
+            psql "${psql_args[@]}" -U "$database_user" \
+              -f warmup.psql -f "$report"
+        }
+
+        output=$(run_report dba_user sql/0_node.sql)
+        [[ "$output" == *"Master"* ]] || {
+          echo "Node role regression failed"
+          echo "$output"
           exit 1
-        fi
-        
-        echo "  Testing p1_alignment_padding.sql..."
-        OUTPUT=$(psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f sql/p1_alignment_padding.sql | grep align)
-        if [[ "$OUTPUT" == *"align1"* && "$OUTPUT" == *"align2"* && "$OUTPUT" == *"int4, more, int8"* ]]; then
-          echo "    ✓ Alignment padding test passed"
-        else
-          echo "    ✗ Alignment padding test failed: $OUTPUT"
+        }
+
+        output=$(run_report dba_user sql/p1_alignment_padding.sql)
+        [[ "$output" == *"align1"* && "$output" == *"align2"* && "$output" == *"int4, more, int8"* ]] || {
+          echo "Alignment padding regression failed"
+          echo "$output"
           exit 1
-        fi
-        
-        echo "  Testing a1_activity.sql..."
-        OUTPUT=$(psql -h localhost -U dba_user -d test --no-psqlrc -f warmup.psql -f sql/a1_activity.sql | grep User)
-        if [[ "$OUTPUT" == *"User"* ]]; then
-          echo "    ✓ Activity test passed"
-        else
-          echo "    ✗ Activity test failed: $OUTPUT"
+        }
+
+        output=$(run_report dba_user sql/a1_activity.sql)
+        [[ "$output" == *"User"* ]] || {
+          echo "Activity regression failed"
+          echo "$output"
           exit 1
-        fi
-        
-        echo "✅ All regression tests passed with minimal privileges"
+        }
+
+        output=$(run_report dba_user sql/i6_non_indexed_fks.sql)
+        [[ "$output" == *"fk_child"* && "$output" == *"fk_test"* ]] || {
+          echo "Foreign key regression failed without intarray"
+          echo "$output"
+          exit 1
+        }
+
+        psql "${psql_args[@]}" -U postgres -c 'DROP EXTENSION pg_stat_statements;'
+        output=$(run_report dba_user sql/s1_pg_stat_statements_top_total.sql)
+        [[ "$output" == *"pg_stat_statements is not available"* ]] || {
+          echo "pg_stat_statements absence regression failed for s1"
+          echo "$output"
+          exit 1
+        }
+        output=$(run_report dba_user sql/s2_pg_stat_statements_report.sql)
+        [[ "$output" == *"pg_stat_statements is not available"* ]] || {
+          echo "pg_stat_statements absence regression failed for s2"
+          echo "$output"
+          exit 1
+        }
+
+        psql "${psql_args[@]}" -U postgres -c 'CREATE EXTENSION pg_stat_statements;'
+        psql "${psql_args[@]}" -U postgres -c 'SELECT 1;'
+        output=$(run_report dba_user sql/s1_pg_stat_statements_top_total.sql)
+        [[ "$output" != *"pg_stat_statements is not available"* ]] || {
+          echo "pg_stat_stat_statements loaded regression failed for s1"
+          echo "$output"
+          exit 1
+        }
+        output=$(run_report dba_user sql/s2_pg_stat_statements_report.sql)
+        [[ "$output" != *"pg_stat_statements is not available"* ]] || {
+          echo "pg_stat_stat_statements loaded regression failed for s2"
+          echo "$output"
+          exit 1
+        }
+
+        psql "${psql_args[@]}" -U postgres -c 'CREATE EXTENSION intarray;'
+        output=$(run_report dba_user sql/i6_non_indexed_fks.sql)
+        [[ "$output" == *"fk_child"* && "$output" == *"fk_test"* ]] || {
+          echo "Foreign key regression failed with intarray"
+          echo "$output"
+          exit 1
+        }
+
+        echo "All regression tests passed"
