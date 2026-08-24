@@ -21,8 +21,9 @@ Questions? Ideas? Contact me: nik@postgres.ai, Nikolay Samokhvalov.
 
 ## Requirements
 
-**You need to have psql version 10 or newer**, but the Postgres server itself can be older – most tools work with it.
-You can install the latest postgresql-client library on your machine and use it to work with older Postgres servers – in this case postgres_dba will work. It's recommended to use psql from PostgreSQL 18 (the latest release) for the best compatibility.
+**You need psql version 10 or newer and a PostgreSQL 14-18 server.** The
+client and server major versions do not need to match. PostgreSQL 18 psql is
+recommended for the best client compatibility.
 
 ### Installing on Ubuntu
 
@@ -74,21 +75,22 @@ After installing pspg, configure it in your `~/.psqlrc`:
 
 ## Supported PostgreSQL Versions
 
-**postgres_dba** is tested and supports **PostgreSQL 13-18**, including the latest PostgreSQL 18 release.
+**postgres_dba** is tested and supports **PostgreSQL 14-18**.
 
-- ✅ **PostgreSQL 13** - Fully supported
 - ✅ **PostgreSQL 14** - Fully supported  
 - ✅ **PostgreSQL 15** - Fully supported
 - ✅ **PostgreSQL 16** - Fully supported
 - ✅ **PostgreSQL 17** - Fully supported (includes `pg_stat_checkpointer` compatibility)
-- ✅ **PostgreSQL 18** - Fully supported (latest release)
+- ✅ **PostgreSQL 18** - Fully supported
 
-Older versions (9.6-12) may work but are not actively tested. Some reports may require specific PostgreSQL features introduced in newer versions.
+PostgreSQL 13 and older are outside the supported and tested range. Existing
+compatibility branches for older releases are retained where harmless, but do
+not constitute a support guarantee.
 
 ## Installation
 The installation is trivial. Clone the repository and put "dba" alias to your `.psqlrc` file (works in bash, zsh, and csh):
 ```bash
-git clone https://github.com/NikolayS/postgres_dba.git
+git clone https://github.com/zechel/postgres_dba.git
 cd postgres_dba
 printf "%s %s %s %s\n" \\echo 'postgres_dba installed. Use ":dba" to see menu' >> ~/.psqlrc
 printf "%s %s %s %s\n" \\set dba \'\\\\i $(pwd)/start.psql\' >> ~/.psqlrc
@@ -167,6 +169,33 @@ and include both shared and local I/O timing on PostgreSQL 17 and newer.
   values for auditing and troubleshooting; it does not make tuning
   recommendations.
 
+### Extensions and execution cost
+
+- **s1** and **s2** require `pg_stat_statements` in
+  `shared_preload_libraries` and the extension installed in the current
+  database. If the extension is absent, the reports explain the requirement
+  instead of running the query.
+- **b3** and **b4** require `pgstattuple`. They can scan large relations and
+  are intentionally excluded from the automated smoke test; run them during
+  an appropriate maintenance or diagnostic window.
+- **i6** works both with and without the optional `intarray` extension.
+- The automated matrix runs reports as superuser and as a role with
+  `pg_monitor`. Some server objects can still require ownership or additional
+  privileges.
+
+### Interactive and automated reports
+
+The menu is interactive by design. When reports are invoked directly in
+automation, pass `--no-psqlrc -v ON_ERROR_STOP=1` and
+`-v postgres_dba_interactive_mode=false`.
+
+- **a2** prompts for a duration in the menu and uses zero seconds in explicit
+  non-interactive mode.
+- **k1** and **k2** prompt for a backend PID and can cancel or terminate work.
+- **u1** and **u2** prompt for role attributes and change server state.
+- **k1**, **k2**, **u1** and **u2** are never executed by the automated test
+  job. **b3** and **b4** are also excluded because of their cost.
+
 ### Secure Role Management
 
 **postgres_dba** includes interactive tools for secure role (user) management:
@@ -206,6 +235,10 @@ Once you added your queries, regenerate `start.psql` file:
 ```bash
 /bin/bash ./init/generate.sh
 ```
+
+Repository contributors must also classify every new report in the explicit
+automation or exclusion list in `.github/workflows/test.yml`; an unclassified
+report fails CI.
 
 Now you have the new `start.psql` and can use it as described above.
 
