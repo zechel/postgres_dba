@@ -103,9 +103,7 @@ jobs:
         psql "${psql_args[@]}" -c 'SELECT version();'
         psql "${psql_args[@]}" -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';"
 
-        postgres_container=$(docker ps \
-          --filter "ancestor=postgres:${{ matrix.postgres-version }}" \
-          --format '{{.ID}}')
+        postgres_container="${{ job.services.postgres.id }}"
         if [[ -z "$postgres_container" ]]; then
           echo "PostgreSQL service container was not found"
           exit 1
@@ -413,13 +411,13 @@ jobs:
         psql "${psql_args[@]}" -U postgres -c 'SELECT 1;'
         output=$(run_report dba_user sql/s1_pg_stat_statements_top_total.sql)
         [[ "$output" != *"pg_stat_statements is not available"* ]] || {
-          echo "pg_stat_stat_statements loaded regression failed for s1"
+          echo "pg_stat_statements loaded regression failed for s1"
           echo "$output"
           exit 1
         }
         output=$(run_report dba_user sql/s2_pg_stat_statements_report.sql)
         [[ "$output" != *"pg_stat_statements is not available"* ]] || {
-          echo "pg_stat_stat_statements loaded regression failed for s2"
+          echo "pg_stat_statements loaded regression failed for s2"
           echo "$output"
           exit 1
         }
