@@ -358,7 +358,9 @@ jobs:
         }
 
         output=$(run_report dba_user sql/0_node.sql)
-        [[ "$output" == *"Master"* ]] || {
+        [[ "$output" == *"Primary"* \
+          && "$output" == *"WAL Position"* \
+          && "$output" == *"Replication Slots"* ]] || {
           echo "Node role regression failed"
           echo "$output"
           exit 1

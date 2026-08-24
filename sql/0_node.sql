@@ -30,7 +30,7 @@ select
       end)::int)::text || ' second')::interval)::text
     || '; paused: ' || :postgres_dba_is_wal_replay_paused()::text || ')'
   else
-    'Master'
+    'Primary'
   end as value
 union all
 (
@@ -43,6 +43,64 @@ union all
     'Replicas',
     string_agg(sync_state || '/' || state || ': ' || hosts, e'\n')
   from repl_groups
+)
+union all
+select
+  'WAL Position',
+  case
+    when pg_is_in_recovery() then format(
+      'received: %s%sreplayed: %s',
+      coalesce(
+        :postgres_dba_last_wal_receive_lsn()::text,
+        'not available'
+      ),
+      e'\n',
+      coalesce(
+        :postgres_dba_last_wal_replay_lsn()::text,
+        'not available'
+      )
+    )
+    else format(
+      'current: %s',
+      coalesce(:postgres_dba_current_wal_lsn()::text, 'not available')
+    )
+  end
+union all
+(
+  with slot_info as (
+    select
+      slot_name,
+      slot_type,
+      case when active then 'active' else 'inactive' end as status,
+      case
+        when restart_lsn is null then 'not available'
+        when :postgres_dba_current_wal_lsn() is null then 'not available'
+        else pg_size_pretty(
+          pg_wal_lsn_diff(
+            :postgres_dba_current_wal_lsn(),
+            restart_lsn
+          )::bigint
+        )
+      end as retained_wal
+    from pg_replication_slots
+  )
+  select
+    'Replication Slots',
+    coalesce(
+      string_agg(
+        format(
+          '%s (%s/%s, retained WAL: %s)',
+          slot_name,
+          slot_type,
+          status,
+          retained_wal
+        ),
+        e'\n'
+        order by slot_name
+      ),
+      'none'
+    )
+  from slot_info
 )
 union all
 select 'Started At', pg_postmaster_start_time()::timestamptz(0)::text
