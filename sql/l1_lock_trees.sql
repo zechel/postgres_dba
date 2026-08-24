@@ -29,7 +29,10 @@ select tree.pid,
        a.datname,a.usename,a.client_addr,
        (clock_timestamp() - a.xact_start)::interval(0) as ts_age,
        (clock_timestamp() - a.state_change)::interval(0) as change_age,
-       case when a.wait_event_type <> 'Lock' then replace(a.state, 'idle in transaction', 'idletx') else 'waiting' end as tx_state,
+       case
+         when a.wait_event_type = 'Lock' then 'waiting'
+         else replace(a.state, 'idle in transaction', 'idletx')
+       end as tx_state,
        lvl,(select count(*) from tree p where p.path ~ ('^'||tree.path) and not p.path=tree.path) blocking,
        case when tree.pid=any(tree.dl) then '!>' else repeat(' .', lvl) end||' '||trim(left(regexp_replace(a.query, e'\\s+', ' ', 'g'),100)) query
   from tree

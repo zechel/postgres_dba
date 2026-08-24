@@ -233,6 +233,109 @@ jobs:
           done
         done
 
+    - name: Test lock wait classification
+      run: |
+        set -euo pipefail
+        psql_args=(
+          -h localhost
+          -U postgres
+          -d test
+          --no-psqlrc
+          -v ON_ERROR_STOP=1
+        )
+        blocker_client_pid=""
+        waiter_client_pid=""
+
+        cleanup_lock_test() {
+          set +e
+          psql "${psql_args[@]}" -c "
+            select pg_terminate_backend(pid)
+            from pg_stat_activity
+            where application_name in (
+              'postgres_dba_lock_blocker',
+              'postgres_dba_lock_waiter'
+            );
+          " > /dev/null 2>&1
+          if [[ -n "$waiter_client_pid" ]]; then
+            wait "$waiter_client_pid"
+          fi
+          if [[ -n "$blocker_client_pid" ]]; then
+            wait "$blocker_client_pid"
+          fi
+          set -e
+        }
+        trap cleanup_lock_test EXIT
+
+        PGAPPNAME=postgres_dba_lock_blocker \
+          psql "${psql_args[@]}" -c "
+            select pg_advisory_lock(987654321);
+            select sum(sqrt(value))
+            from generate_series(1, 1000000000) as cpu(value);
+          " > "$RUNNER_TEMP/lock_blocker.log" 2>&1 &
+        blocker_client_pid=$!
+
+        blocker_ready=0
+        for attempt in {1..40}; do
+          blocker_ready=$(psql "${psql_args[@]}" -Atqc "
+            select count(*)
+            from pg_stat_activity
+            where application_name = 'postgres_dba_lock_blocker'
+              and state = 'active'
+              and wait_event_type is null;
+          ")
+          if [[ "$blocker_ready" == "1" ]]; then
+            break
+          fi
+          sleep 0.25
+        done
+        [[ "$blocker_ready" == "1" ]] || {
+          echo "CPU blocker did not become active"
+          sed -n '1,120p' "$RUNNER_TEMP/lock_blocker.log"
+          exit 1
+        }
+
+        PGAPPNAME=postgres_dba_lock_waiter \
+          psql "${psql_args[@]}" -c 'select pg_advisory_lock(987654321);' \
+            > "$RUNNER_TEMP/lock_waiter.log" 2>&1 &
+        waiter_client_pid=$!
+
+        waiter_ready=0
+        for attempt in {1..40}; do
+          waiter_ready=$(psql "${psql_args[@]}" -Atqc "
+            select count(*)
+            from pg_stat_activity
+            where application_name = 'postgres_dba_lock_waiter'
+              and wait_event_type = 'Lock';
+          ")
+          if [[ "$waiter_ready" == "1" ]]; then
+            break
+          fi
+          sleep 0.25
+        done
+        [[ "$waiter_ready" == "1" ]] || {
+          echo "Lock waiter did not become blocked"
+          sed -n '1,120p' "$RUNNER_TEMP/lock_waiter.log"
+          exit 1
+        }
+
+        l1_output=$(PGOPTIONS="-c postgres_dba.wide=off" PAGER=cat \
+          psql "${psql_args[@]}" -v postgres_dba_interactive_mode=false \
+            -f warmup.psql -f sql/l1_lock_trees.sql)
+        [[ "$l1_output" == *"waiting"* && "$l1_output" == *"active"* ]] || {
+          echo "l1 lock/CPU classification regression failed"
+          echo "$l1_output"
+          exit 1
+        }
+
+        l2_output=$(PGOPTIONS="-c postgres_dba.wide=off" PAGER=cat \
+          psql "${psql_args[@]}" -v postgres_dba_interactive_mode=false \
+            -f warmup.psql -f sql/l2_lock_trees.sql)
+        [[ "$l2_output" == *"waiting"* && "$l2_output" == *"CPU*"* ]] || {
+          echo "l2 lock/CPU classification regression failed"
+          echo "$l2_output"
+          exit 1
+        }
+
     - name: Run regression tests
       run: |
         set -euo pipefail
