@@ -33,7 +33,7 @@ jobs:
         sql/i7_tables_without_primary_keys.sql
         sql/l1_lock_trees.sql
         sql/l2_lock_trees.sql
-        sql/p1_alignment_padding.sql
+        sql/p1_index_create_progress.sql
         sql/r1_replication_status.sql
         sql/r2_replication_slots.sql
         sql/s1_pg_stat_statements_top_total.sql
@@ -42,6 +42,7 @@ jobs:
         sql/v1_vacuum_activity.sql
         sql/v2_autovacuum_progress_and_queue.sql
         sql/v3_wraparound_risk.sql
+        sql/x1_alignment_padding.sql
       EXCLUDED_REPORTS: >-
         sql/b3_table_pgstattuple.sql
         sql/b4_btree_pgstattuple.sql
@@ -362,7 +363,7 @@ jobs:
           exit 1
         }
 
-        output=$(run_report dba_user sql/p1_alignment_padding.sql)
+        output=$(run_report dba_user sql/x1_alignment_padding.sql)
         [[ "$output" == *"align1"* && "$output" == *"align2"* && "$output" == *"int4, more, int8"* ]] || {
           echo "Alignment padding regression failed"
           echo "$output"

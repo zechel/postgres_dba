@@ -1,4 +1,4 @@
---How many bytes can be saved if columns are reordered?
+--Alignment padding: bytes saved by reordering columns
 
 -- TODO: not-yet-analyzed tables – show a warning (cannot get n_live_tup -> cannot get total bytes)
 -- TODO: NULLs
@@ -195,5 +195,4 @@ select
 from result r1
 order by table_bytes desc
 ;
-
 

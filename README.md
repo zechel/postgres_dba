@@ -135,6 +135,13 @@ And then:
 
 ## Key Features
 
+### Report ID migration
+
+- **p1** now shows progress for `CREATE INDEX` and `REINDEX` operations.
+- The former **p1** alignment-padding report moved to **x1**. Update any local
+  automation that invokes `sql/p1_alignment_padding.sql` to use
+  `sql/x1_alignment_padding.sql`.
+
 ### Rapid Incident Diagnostics
 
 The interactive menu includes read-only checks designed for fast triage on

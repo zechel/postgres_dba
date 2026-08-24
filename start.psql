@@ -25,7 +25,7 @@
 \echo '  k2 – Terminate Session (pg_terminate_backend)'
 \echo '  l1 – Lock trees (lightweight)'
 \echo '  l2 – Lock trees, detailed (based on pg_blocking_pids())'
-\echo '  p1 – How many bytes can be saved if columns are reordered?'
+\echo '  p1 – Index (re)creation progress (CREATE INDEX / REINDEX)'
 \echo '  r1 – Replication status for primary or replica'
 \echo '  r2 – Replication slots: state, retained WAL and transaction horizons'
 \echo '  s1 – Slowest queries by total time (PG 9.6+; requires pg_stat_statements)'
@@ -33,9 +33,10 @@
 \echo '  t1 – Postgres parameters'
 \echo '  u1 – Create user with random password (interactive)'
 \echo '  u2 – Alter user with random password (interactive)'
-\echo '  v1 – Vacuum: current activity'
+\echo '  v1 – Vacuum: running operations (detailed progress)'
 \echo '  v2 – VACUUM progress and autovacuum queue'
 \echo '  v3 – Transaction ID wraparound risk by database and table'
+\echo '  x1 – Alignment padding: bytes saved by reordering columns'
 \echo '   q – Quit'
 \echo
 \echo Type your choice and press <Enter>:
@@ -78,6 +79,7 @@ select
 :d_stp::text = 'v1' as d_step_is_v1,
 :d_stp::text = 'v2' as d_step_is_v2,
 :d_stp::text = 'v3' as d_step_is_v3,
+:d_stp::text = 'x1' as d_step_is_x1,
 :d_stp::text = 'q' as d_step_is_q \gset
 \if :d_step_is_q
   \echo 'Bye!'
@@ -183,7 +185,7 @@ select
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \elif :d_step_is_p1
-  \ir ./sql/p1_alignment_padding.sql
+  \ir ./sql/p1_index_create_progress.sql
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \elif :d_step_is_r1
@@ -224,6 +226,10 @@ select
   \ir ./start.psql
 \elif :d_step_is_v3
   \ir ./sql/v3_wraparound_risk.sql
+  \prompt 'Press <Enter> to continue…' d_dummy
+  \ir ./start.psql
+\elif :d_step_is_x1
+  \ir ./sql/x1_alignment_padding.sql
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \else
