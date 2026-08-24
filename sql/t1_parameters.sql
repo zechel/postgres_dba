@@ -69,7 +69,7 @@ select
       when '8kB' then pg_size_pretty(setting::int8 * 8 * 1024)
       when '16MB' then pg_size_pretty(setting::int8 * 16 * 1024 * 1024)
       when 'kB' then pg_size_pretty(setting::int8 * 1024)
-      else setting || coalesce ('', ' ' || unit)
+      else setting || coalesce(' ' || unit, '')
     end
   end as "Changed Value",
   case when boot_val in ('-1', '0', 'off', 'on') then boot_val else
@@ -77,7 +77,7 @@ select
       when '8kB' then pg_size_pretty(boot_val::int8 * 8 * 1024)
       when '16MB' then pg_size_pretty(boot_val::int8 * 16 * 1024 * 1024)
       when 'kB' then pg_size_pretty(boot_val::int8 * 1024)
-      else boot_val || coalesce ('', ' ' || unit)
+      else boot_val || coalesce(' ' || unit, '')
     end
   end as "Default Value",
   category as "Category"

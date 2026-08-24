@@ -380,6 +380,14 @@ jobs:
           exit 1
         }
 
+        output=$(run_report dba_user sql/t1_parameters.sql)
+        [[ "$output" == *"autovacuum_naptime"* \
+          && "$output" == *"60 s"* ]] || {
+          echo "Parameter unit regression failed"
+          echo "$output"
+          exit 1
+        }
+
         output=$(run_report dba_user sql/i6_non_indexed_fks.sql)
         [[ "$output" == *"fk_child"* && "$output" == *"fk_test"* ]] || {
           echo "Foreign key regression failed without intarray"
