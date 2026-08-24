@@ -3,7 +3,7 @@
 --This SQL is derived from https://github.com/ioguix/pgsql-bloat-estimation/blob/master/table/table_bloat.sql
 
 /*
-* WARNING: executed with a non-superuser role, the query inspect only tables you are granted to read.
+* WARNING: executed with a non-superuser role, the query inspects only tables you are granted to read.
 * This query is compatible with PostgreSQL 9.0 and more
 */
 
@@ -88,7 +88,7 @@ select
   greatest(last_autovacuum, last_vacuum)::timestamp(0)::text 
     || case greatest(last_autovacuum, last_vacuum)
       when last_autovacuum then ' (auto)'
-    else '' end as "Last Vaccuum",
+    else '' end as "Last Vacuum",
   greatest(last_autoanalyze, last_analyze)::timestamp(0)::text 
     || case greatest(last_autoanalyze, last_analyze)
       when last_autoanalyze then ' (auto)'
