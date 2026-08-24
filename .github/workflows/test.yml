@@ -60,6 +60,7 @@ jobs:
     services:
       postgres:
         image: postgres:${{ matrix.postgres-version }}
+        command: "-c shared_preload_libraries=pg_stat_statements"
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: test
@@ -101,20 +102,6 @@ jobs:
         done
 
         psql "${psql_args[@]}" -c 'SELECT version();'
-        psql "${psql_args[@]}" -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';"
-
-        postgres_container="${{ job.services.postgres.id }}"
-        if [[ -z "$postgres_container" ]]; then
-          echo "PostgreSQL service container was not found"
-          exit 1
-        fi
-        docker restart "$postgres_container"
-
-        until pg_isready -h localhost -p 5432 -U postgres; do
-          echo "Waiting for postgres after preload configuration..."
-          sleep 2
-        done
-
         preload_libraries=$(psql "${psql_args[@]}" -Atqc 'SHOW shared_preload_libraries;')
         [[ "$preload_libraries" == *"pg_stat_statements"* ]] || {
           echo "pg_stat_statements was not preloaded: $preload_libraries"
