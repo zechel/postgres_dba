@@ -253,12 +253,24 @@ jobs:
         }
         trap cleanup_lock_test EXIT
 
+        # The blocker must burn CPU without any wait event. A large
+        # generate_series() function scan is materialized into a tuplestore and
+        # spills to temporary files, which surfaces as IO:BufFileWrite and makes
+        # the CPU* assertion below race-dependent. A PL/pgSQL arithmetic loop
+        # produces no tuples and no I/O, so wait_event_type stays null.
         PGAPPNAME=postgres_dba_lock_blocker \
-          psql "${psql_args[@]}" -c "
+          psql "${psql_args[@]}" -c '
             select pg_advisory_lock(987654321);
-            select sum(sqrt(value))
-            from generate_series(1, 1000000000) as cpu(value);
-          " > "$RUNNER_TEMP/lock_blocker.log" 2>&1 &
+            do $$
+            declare
+              counter bigint := 0;
+            begin
+              loop
+                counter := (counter + 1) % 1000000;
+              end loop;
+            end
+            $$;
+          ' > "$RUNNER_TEMP/lock_blocker.log" 2>&1 &
         blocker_client_pid=$!
 
         blocker_ready=0
