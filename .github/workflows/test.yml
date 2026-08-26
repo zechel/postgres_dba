@@ -23,6 +23,7 @@ jobs:
         sql/b1_table_estimation.sql
         sql/b2_btree_estimation.sql
         sql/b5_tables_no_stats.sql
+        sql/b6_table_bloat_approx.sql
         sql/e1_extensions.sql
         sql/i1_rare_indexes.sql
         sql/i2_redundant_indexes.sql
@@ -420,6 +421,22 @@ jobs:
           echo "$output"
           exit 1
         }
+
+        output=$(run_report dba_user sql/b6_table_bloat_approx.sql)
+        [[ "$output" == *"Table size"* ]] || {
+          echo "Approximate bloat regression failed with pgstattuple present"
+          echo "$output"
+          exit 1
+        }
+
+        psql "${psql_args[@]}" -U postgres -c 'DROP EXTENSION pgstattuple;'
+        output=$(run_report dba_user sql/b6_table_bloat_approx.sql)
+        [[ "$output" == *"pgstattuple is not available"* ]] || {
+          echo "Approximate bloat regression failed without pgstattuple"
+          echo "$output"
+          exit 1
+        }
+        psql "${psql_args[@]}" -U postgres -c 'CREATE EXTENSION pgstattuple;'
 
         psql "${psql_args[@]}" -U postgres -c 'CREATE EXTENSION intarray;'
         output=$(run_report dba_user sql/i6_non_indexed_fks.sql)

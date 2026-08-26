@@ -13,6 +13,7 @@
 \echo '  b3 – Table bloat (requires pgstattuple; expensive)'
 \echo '  b4 – B-tree indexes bloat (requires pgstattuple; expensive)'
 \echo '  b5 – Tables and columns without stats (so bloat cannot be estimated)'
+\echo '  b6 – Table bloat, approximate (requires pgstattuple; moderate cost)'
 \echo '  e1 – Extensions installed in current database'
 \echo '  i1 – Unused and rarely used indexes'
 \echo '  i2 – Redundant indexes'
@@ -57,6 +58,7 @@ select
 :d_stp::text = 'b3' as d_step_is_b3,
 :d_stp::text = 'b4' as d_step_is_b4,
 :d_stp::text = 'b5' as d_step_is_b5,
+:d_stp::text = 'b6' as d_step_is_b6,
 :d_stp::text = 'e1' as d_step_is_e1,
 :d_stp::text = 'i1' as d_step_is_i1,
 :d_stp::text = 'i2' as d_step_is_i2,
@@ -136,6 +138,10 @@ select
   \ir ./start.psql
 \elif :d_step_is_b5
   \ir ./sql/b5_tables_no_stats.sql
+  \prompt 'Press <Enter> to continue…' d_dummy
+  \ir ./start.psql
+\elif :d_step_is_b6
+  \ir ./sql/b6_table_bloat_approx.sql
   \prompt 'Press <Enter> to continue…' d_dummy
   \ir ./start.psql
 \elif :d_step_is_e1

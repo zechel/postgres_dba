@@ -178,6 +178,15 @@ and include both shared and local I/O timing on PostgreSQL 17 and newer.
 - **b3** and **b4** require `pgstattuple`. They can scan large relations and
   are intentionally excluded from the automated smoke test; run them during
   an appropriate maintenance or diagnostic window.
+- **b6** also requires `pgstattuple`, but uses `pgstattuple_approx()`, which
+  consults the visibility map and skips all-visible pages. On vacuumed tables
+  it reports the same numbers as **b3** at a small fraction of the cost, so it
+  is the recommended starting point for measuring real bloat: **b1** and **b2**
+  are free estimates, **b6** measures cheaply, and **b3** and **b4** measure
+  exhaustively. It prompts for a minimum table size (100 MB by default) to keep
+  the long tail of small relations out of the scan. A table that has never been
+  vacuumed has an empty visibility map, so nothing can be skipped and the cost
+  approaches a full scan.
 - **i6** works both with and without the optional `intarray` extension.
 - The automated matrix runs reports as superuser and as a role with
   `pg_monitor`. Some server objects can still require ownership or additional
@@ -191,6 +200,8 @@ automation, pass `--no-psqlrc -v ON_ERROR_STOP=1` and
 
 - **a2** prompts for a duration in the menu and uses zero seconds in explicit
   non-interactive mode.
+- **b6** prompts for a minimum table size and uses 100 MB in explicit
+  non-interactive mode, or when the prompt is answered with an empty line.
 - **k1** and **k2** prompt for a backend PID and can cancel or terminate work.
 - **u1** and **u2** prompt for role attributes and change server state.
 - **k1**, **k2**, **u1** and **u2** are never executed by the automated test
