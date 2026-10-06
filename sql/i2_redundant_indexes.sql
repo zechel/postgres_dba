@@ -9,143 +9,127 @@
 -- (Keep in mind, that on replicas, the whole picture of index usage
 -- is usually very different from master).
 
-with fk_indexes as (
+-- An index is reported as redundant to another index of the same table only
+-- when the other index provides everything it provides:
+--   * same access method, expressions and predicate;
+--   * its key columns, operator classes, collations and ordering
+--     (ASC/DESC, NULLS FIRST/LAST) are a prefix of the other index's keys
+--     (btree only; other access methods need an exact match);
+--   * its INCLUDE columns are present in the other index;
+--   * if it is unique, the other index is an immediate unique index on exactly
+--     the same key columns with the same NULLS [NOT] DISTINCT behaviour.
+-- Primary keys and indexes that back a constraint are never reported.
+-- Of two equivalent indexes, only the newer one is reported.
+-- Always review the definitions before dropping anything.
+
+with index_data as (
   select
-    n.nspname as schema_name,
-    ci.relname as index_name,
-    cr.relname as table_name,
-    (confrelid::regclass)::text as fk_table_ref,
-    array_to_string(indclass, ', ') as opclasses
+    i.indexrelid,
+    i.indrelid,
+    am.amname,
+    i.indnkeyatts,
+    i.indisunique,
+    i.indisprimary,
+    i.indimmediate,
+    coalesce((to_jsonb(i) ->> 'indnullsnotdistinct')::boolean, false) as nulls_not_distinct,
+    exists (select from pg_constraint c where c.conindid = i.indexrelid) as backs_constraint,
+    (i.indkey::int2[])[0:i.indnkeyatts - 1] as key_attnums,
+    (i.indkey::int2[])[i.indnkeyatts:i.indnatts - 1] as include_attnums,
+    i.indkey::int2[] as all_attnums,
+    (i.indclass::oid[])[0:i.indnkeyatts - 1] as opclasses,
+    (i.indcollation::oid[])[0:i.indnkeyatts - 1] as collations,
+    (i.indoption::int2[])[0:i.indnkeyatts - 1] as options,
+    pg_get_expr(i.indexprs, i.indrelid) as exprs,
+    pg_get_expr(i.indpred, i.indrelid) as pred
   from pg_index i
-  join pg_class ci on ci.oid = i.indexrelid and ci.relkind = 'i'
-  join pg_class cr on cr.oid = i.indrelid and cr.relkind = 'r'
+  join pg_class ci on ci.oid = i.indexrelid
   join pg_namespace n on n.oid = ci.relnamespace
-  join pg_constraint cn on cn.conrelid = cr.oid
-  left join pg_stat_user_indexes si on si.indexrelid = i.indexrelid
+  join pg_am am on am.oid = ci.relam
   where
-     contype = 'f'
-     and i.indisunique is false
-     and conkey is not null
-     and ci.relpages > 0 -- raise for a DB with a lot of indexes
-     and si.idx_scan < 10
-),
--- Redundant indexes
-index_data as (
+    i.indisvalid
+    and i.indisready
+    and n.nspname not in ('pg_catalog', 'information_schema')
+    and n.nspname !~ '^pg_toast'
+), redundant_pairs as (
   select
-    *,
-    (select string_agg(lpad(i, 3, '0'), ' ') from unnest(string_to_array(indkey::text, ' ')) i) as columns,
-    array_to_string(indclass, ', ') as opclasses
-  from pg_index i
-  join pg_class ci on ci.oid = i.indexrelid and ci.relkind = 'i'
-  where indisvalid = true and ci.relpages > 0 -- raise for a DB with a lot of indexes
-), redundant_indexes as (
-  select
-    i2.indexrelid as index_id,
-    tnsp.nspname AS schema_name,
-    trel.relname AS table_name,
-    pg_relation_size(trel.oid) as table_size_bytes,
-    irel.relname AS index_name,
-    am1.amname as access_method,
-    (i1.indexrelid::regclass)::text as reason,
-    i1.indexrelid as reason_index_id,
-    pg_get_indexdef(i1.indexrelid) main_index_def,
-    pg_size_pretty(pg_relation_size(i1.indexrelid)) main_index_size,
-    pg_get_indexdef(i2.indexrelid) index_def,
-    pg_relation_size(i2.indexrelid) index_size_bytes,
-    s.idx_scan as index_usage,
-    quote_ident(tnsp.nspname) as formatted_schema_name,
-    coalesce(nullif(quote_ident(tnsp.nspname), 'public') || '.', '') || quote_ident(irel.relname) as formatted_index_name,
-    quote_ident(trel.relname) AS formatted_table_name,
-    coalesce(nullif(quote_ident(tnsp.nspname), 'public') || '.', '') || quote_ident(trel.relname) as formatted_relation_name,
-    i2.opclasses
-  from
-    index_data as i1
-    join index_data as i2 on (
-        i1.indrelid = i2.indrelid -- same table
-        and i1.indexrelid <> i2.indexrelid -- NOT same index
-    )
-    inner join pg_opclass op1 on i1.indclass[0] = op1.oid
-    inner join pg_opclass op2 on i2.indclass[0] = op2.oid
-    inner join pg_am am1 on op1.opcmethod = am1.oid
-    inner join pg_am am2 on op2.opcmethod = am2.oid
-    join pg_stat_user_indexes as s on s.indexrelid = i2.indexrelid
-    join pg_class as trel on trel.oid = i2.indrelid
-    join pg_namespace as tnsp on trel.relnamespace = tnsp.oid
-    join pg_class as irel on irel.oid = i2.indexrelid
+    b.indexrelid as index_id,
+    a.indexrelid as reason_index_id
+  from index_data as b
+  join index_data as a on
+    a.indrelid = b.indrelid -- same table
+    and a.indexrelid <> b.indexrelid -- NOT same index
   where
-    not i2.indisprimary -- index 1 is not primary
-    and not ( -- skip if index1 is (primary or uniq) and is NOT (primary and uniq)
-        i2.indisunique and not i1.indisprimary
+    a.amname = b.amname
+    and not b.indisprimary
+    and not b.backs_constraint
+    and b.indnkeyatts <= a.indnkeyatts
+    and (b.amname = 'btree' or b.indnkeyatts = a.indnkeyatts)
+    and b.key_attnums = a.key_attnums[1:b.indnkeyatts]
+    and b.opclasses = a.opclasses[1:b.indnkeyatts]
+    and b.collations = a.collations[1:b.indnkeyatts]
+    and b.options = a.options[1:b.indnkeyatts]
+    and b.include_attnums <@ a.all_attnums
+    and b.exprs is not distinct from a.exprs
+    and (b.exprs is null or b.key_attnums = a.key_attnums)
+    and b.pred is not distinct from a.pred
+    and (
+      not b.indisunique
+      or (
+        a.indisunique
+        and a.indimmediate
+        and b.key_attnums = a.key_attnums
+        and b.nulls_not_distinct = a.nulls_not_distinct
+      )
     )
-    and am1.amname = am2.amname -- same access type
-    and i1.columns like (i2.columns || '%') -- index 2 includes all columns from index 1
-    and i1.opclasses like (i2.opclasses || '%')
-    -- index expressions are the same
-    and pg_get_expr(i1.indexprs, i1.indrelid) is not distinct from pg_get_expr(i2.indexprs, i2.indrelid)
-    -- index predicates are the same
-    and pg_get_expr(i1.indpred, i1.indrelid) is not distinct from pg_get_expr(i2.indpred, i2.indrelid)
-), redundant_indexes_fk as (
-  select
-    ri.*,
-    (
-      select count(1)
-      from fk_indexes fi
-      where
-        fi.fk_table_ref = ri.table_name
-        and fi.opclasses like (ri.opclasses || '%')
-     ) > 0 as supports_fk
-  from redundant_indexes ri
-),
--- Cut recursive links
-redundant_indexes_tmp_num as (
-  select
-    row_number() over () num,
-    rig.*
-  from redundant_indexes_fk rig
-  order by index_id
-), redundant_indexes_tmp_cut as (
-  select
-    ri1.*,
-    ri2.num as r_num
-  from redundant_indexes_tmp_num ri1
-  left join redundant_indexes_tmp_num ri2 on ri2.reason_index_id = ri1.index_id and ri1.reason_index_id = ri2.index_id
-  where ri1.num < ri2.num or ri2.num is null
-), redundant_indexes_cut_grouped as (
-  select
-    distinct(num),
-    *
-  from redundant_indexes_tmp_cut
-  order by index_size_bytes desc
-), redundant_indexes_grouped as (
-  select
-    distinct(num),
-    *
-  from redundant_indexes_tmp_cut
-  order by index_size_bytes desc
+), redundant as (
+  -- Equivalent indexes are redundant to each other: keep the older one.
+  select p.*
+  from redundant_pairs p
+  where not exists (
+    select
+    from redundant_pairs r
+    where
+      r.index_id = p.reason_index_id
+      and r.reason_index_id = p.index_id
+      and p.index_id < p.reason_index_id
+  )
 )
 select
-  schema_name,
-  table_name,
-  table_size_bytes,
-  index_name,
-  access_method,
-  string_agg(distinct reason, ', ') as redundant_to,
-  string_agg(main_index_def, ', ') as main_index_def,
-  string_agg(main_index_size, ', ') as main_index_size,
-  index_def,
-  index_size_bytes,
-  index_usage,
-  supports_fk
-from redundant_indexes_cut_grouped
+  tnsp.nspname as schema_name,
+  trel.relname as table_name,
+  pg_relation_size(trel.oid) as table_size_bytes,
+  irel.relname as index_name,
+  b.amname as access_method,
+  string_agg(r.reason_index_id::regclass::text, ', ' order by r.reason_index_id) as redundant_to,
+  string_agg(pg_get_indexdef(r.reason_index_id), ', ' order by r.reason_index_id) as main_index_def,
+  string_agg(pg_size_pretty(pg_relation_size(r.reason_index_id)), ', ' order by r.reason_index_id) as main_index_size,
+  pg_get_indexdef(b.indexrelid) as index_def,
+  pg_relation_size(b.indexrelid) as index_size_bytes,
+  s.idx_scan as index_usage,
+  exists (
+    select
+    from pg_constraint c
+    where
+      c.contype = 'f'
+      and c.conrelid = b.indrelid
+      and cardinality(c.conkey) <= b.indnkeyatts
+      and c.conkey <@ b.key_attnums[1:cardinality(c.conkey)]
+  ) as supports_fk
+from redundant r
+join index_data b on b.indexrelid = r.index_id
+join pg_class irel on irel.oid = b.indexrelid
+join pg_class trel on trel.oid = b.indrelid
+join pg_namespace tnsp on tnsp.oid = trel.relnamespace
+left join pg_stat_user_indexes s on s.indexrelid = b.indexrelid
 group by
-  index_id,
-  schema_name,
-  table_name,
-  table_size_bytes,
-  index_name,
-  access_method,
-  index_def,
-  index_size_bytes,
-  index_usage,
-  supports_fk
-order by index_size_bytes desc;
+  b.indexrelid,
+  b.indrelid,
+  b.indnkeyatts,
+  b.key_attnums,
+  b.amname,
+  tnsp.nspname,
+  trel.oid,
+  trel.relname,
+  irel.relname,
+  s.idx_scan
+order by index_size_bytes desc, schema_name, table_name, index_name;
