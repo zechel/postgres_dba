@@ -95,7 +95,7 @@ with unused as (
     and b.opclasses = a.opclasses[1:b.indnkeyatts]
     and b.collations = a.collations[1:b.indnkeyatts]
     and b.options = a.options[1:b.indnkeyatts]
-    and b.include_attnums <@ a.all_attnums
+    and b.include_attnums operator(pg_catalog.<@) a.all_attnums
     and b.exprs is not distinct from a.exprs
     and (b.exprs is null or b.key_attnums = a.key_attnums)
     and b.pred is not distinct from a.pred

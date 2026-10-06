@@ -36,6 +36,7 @@ cleanup() {
   sql "drop role if exists \"postgres_dba_o'test\", postgres_dba_invalid, postgres_dba_alter,
     postgres_dba_seed1, postgres_dba_seed2" > /dev/null 2>&1
   sql "select pg_terminate_backend(pid) from pg_stat_activity where application_name like 'postgres_dba_behavior%'" > /dev/null 2>&1
+  [[ "${created_intarray:-false}" == true ]] && sql "drop extension if exists intarray" > /dev/null 2>&1
   set -e
 }
 trap cleanup EXIT
@@ -43,6 +44,15 @@ cleanup
 
 ###############################################################################
 echo "Index recommendations (i2, i3, i5)"
+
+# intarray makes "smallint[] <@ smallint[]" ambiguous; the reports must work with it.
+created_intarray=false
+if [[ "$(sql "select count(*) from pg_extension where extname = 'intarray'")" == 0 ]] \
+  && [[ "$(sql "select count(*) from pg_available_extensions where name = 'intarray'")" == 1 ]]; then
+  sql "create extension intarray" > /dev/null && created_intarray=true
+fi
+check "intarray is installed for the index tests" \
+  [ "$(sql "select count(*) from pg_extension where extname = 'intarray'")" == 1 ]
 
 "${PSQL[@]}" -q <<SQL
 create schema $SCHEMA;

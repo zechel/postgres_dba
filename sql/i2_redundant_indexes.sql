@@ -68,7 +68,7 @@ with index_data as (
     and b.opclasses = a.opclasses[1:b.indnkeyatts]
     and b.collations = a.collations[1:b.indnkeyatts]
     and b.options = a.options[1:b.indnkeyatts]
-    and b.include_attnums <@ a.all_attnums
+    and b.include_attnums operator(pg_catalog.<@) a.all_attnums
     and b.exprs is not distinct from a.exprs
     and (b.exprs is null or b.key_attnums = a.key_attnums)
     and b.pred is not distinct from a.pred
@@ -113,7 +113,7 @@ select
       c.contype = 'f'
       and c.conrelid = b.indrelid
       and cardinality(c.conkey) <= b.indnkeyatts
-      and c.conkey <@ b.key_attnums[1:cardinality(c.conkey)]
+      and c.conkey operator(pg_catalog.<@) b.key_attnums[1:cardinality(c.conkey)]
   ) as supports_fk
 from redundant r
 join index_data b on b.indexrelid = r.index_id
