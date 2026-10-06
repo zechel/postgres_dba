@@ -8,9 +8,40 @@ The missing set of useful tools for Postgres DBA and mere mortals.
 
 :point_right: See also [postgres_ai](https://github.com/postgres-ai/postgres_ai), a comprehensive monitoring and optimization platform that includes automated health checks, SQL performance analysis, and much more.
 
+## About this fork
+
+This repository is a fork of
+[NikolayS/postgres_dba](https://github.com/NikolayS/postgres_dba), created by
+Nikolay Samokhvalov and distributed under the BSD 3-Clause license. It is
+maintained independently for use in client environments and does not track
+upstream with full merges: approved upstream changes are adapted in small
+commits whose messages record their upstream origin.
+
+Main differences from upstream:
+
+- **Additional reports:** **a3**, **a4**, **i7**, **r1**, **r2**, **v3**,
+  **b6**, **t2** and the WAL diagnostics in **0**.
+- **Renamed report IDs:** role management moved to **u1**/**u2**, **t1** is a
+  server parameter report, and alignment padding moved from **p1** to **x1**.
+- **Client readiness fixes** (see
+  `docs/reviews/2026-10-01-prontidao-clientes.md`):
+  - **i2**, **i3** and **i5** never suggest dropping an index that a
+    uniqueness guarantee, ordering or constraint depends on.
+  - **u1** and **u2** apply the attributes that were answered, accept only
+    explicit yes/no answers, and generate cryptographically strong passwords
+    that never appear in server messages.
+  - Typed input is escaped and validated.
+  - The menu generator writes atomically inside the repository.
+  - **a2** shows positive durations.
+- **Tests:** CI runs every report on PostgreSQL 14–18 as superuser and as a
+  `pg_monitor` role, plus behaviour tests (`test/behavior.sh`) that check the
+  effect of the recommendations, not only that they run.
+
 ## Questions?
 
-Questions? Ideas? Contact me: nik@postgres.ai, Nikolay Samokhvalov.
+For this fork, open an issue at
+[zechel/postgres_dba](https://github.com/zechel/postgres_dba/issues). For the
+original project, contact Nikolay Samokhvalov: nik@postgres.ai.
 
 ## Credits
 
@@ -160,6 +191,21 @@ customer environments:
 The **s1** and **s2** `pg_stat_statements` reports use one implementation for
 all supported server versions. They automatically map renamed timing columns
 and include both shared and local I/O timing on PostgreSQL 17 and newer.
+
+### Other reports
+
+- **3** – Table statistics: rows read, inserts, updates, deletes and HOT
+  update ratio
+- **a1** – Current connections grouped by database, user and state
+- **b5** – Tables and columns without statistics, whose bloat cannot be
+  estimated
+- **e1** – Extensions installed in the current database
+- **i1** – Unused and rarely used indexes
+- **i4** – Invalid indexes
+- **l1** – Lock trees (lightweight)
+- **l2** – Lock trees, detailed, based on `pg_blocking_pids()`
+- **v1** – Running VACUUM operations with detailed progress
+- **v2** – VACUUM progress and the autovacuum queue
 
 ### Configuration inventory
 
