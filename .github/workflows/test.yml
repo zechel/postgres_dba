@@ -447,3 +447,15 @@ jobs:
         }
 
         echo "All regression tests passed"
+
+    # Verifies what reports recommend and what interactive routines change:
+    # index redundancy semantics, role attributes, password handling, input
+    # escaping, a2 durations and the menu generator. It also runs the
+    # interactive u1/u2/k1/k2 routines, but only against fixture objects
+    # and a backend started by the test itself.
+    - name: Run behaviour tests
+      env:
+        PGHOST: localhost
+        PGUSER: postgres
+        PGDATABASE: test
+      run: test/behavior.sh
