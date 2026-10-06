@@ -1,0 +1,143 @@
+{
+  "container": "postgres-dba-audit-20261001",
+  "commit": "a69ef51b6cd63c2fa6598f25707e4dbbb1a314e6",
+  "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "safe_reports": {
+    "executions": 132,
+    "failures": []
+  },
+  "regressions": [
+    {
+      "report": "sql/0_node.sql",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/x1_alignment_padding.sql",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/a1_activity.sql",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/t1_parameters.sql",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/i6_non_indexed_fks.sql",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "i6 with intarray",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/s1_pg_stat_statements_top_total.sql absent extension",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/s2_pg_stat_statements_report.sql absent extension",
+      "exit": 0,
+      "expected_present": true
+    },
+    {
+      "report": "sql/b6_table_bloat_approx.sql absent extension",
+      "exit": 0,
+      "expected_present": true
+    }
+  ],
+  "b6_actual_measurement": {
+    "exit": 0,
+    "align1_present": true,
+    "fk_child_present": true,
+    "error": ""
+  },
+  "u2_negative_answers": {
+    "exit": 0,
+    "role_still_superuser_and_login": "t|t"
+  },
+  "u1_invalid_answer": {
+    "exit": 0,
+    "role_superuser_and_login": "t|f"
+  },
+  "u1_apostrophe": {
+    "exit": 3,
+    "syntax_error": true
+  },
+  "password_repeatability": {
+    "passwords_captured": true,
+    "same_password_with_same_seed": true
+  },
+  "role_password_logging": {
+    "exit": 0,
+    "password_captured": true,
+    "generated_password_in_server_log": true
+  },
+  "i5_suggested_drops": {
+    "exit": 0,
+    "drops": [
+      "DROP INDEX CONCURRENTLY audit_indexes.coverage_ab; -- 240 kB, redundant to index: \"audit_indexes.coverage_a\", table audit_indexes.coverage",
+      "DROP INDEX CONCURRENTLY audit_indexes.sort_case_asc; -- 240 kB, redundant to index: \"audit_indexes.sort_case_mixed\", table audit_indexes.sort_case",
+      "DROP INDEX CONCURRENTLY audit_indexes.sort_case_mixed; -- 240 kB, redundant to index: \"audit_indexes.sort_case_asc\", table audit_indexes.sort_case",
+      "DROP INDEX CONCURRENTLY audit_indexes.unique_case_unique; -- 240 kB, redundant to index: \"audit_indexes.unique_case_plain\", table audit_indexes.unique_case",
+      "DROP INDEX CONCURRENTLY audit_indexes.coverage_a; -- 240 kB, unused (idx_scan: 0), table coverage",
+      "DROP INDEX CONCURRENTLY audit_indexes.coverage_ab; -- 240 kB, unused (idx_scan: 0), table coverage",
+      "DROP INDEX CONCURRENTLY audit_indexes.sort_case_asc; -- 240 kB, unused (idx_scan: 0), table sort_case",
+      "DROP INDEX CONCURRENTLY audit_indexes.sort_case_mixed; -- 240 kB, unused (idx_scan: 0), table sort_case",
+      "DROP INDEX CONCURRENTLY audit_indexes.unique_case_plain; -- 240 kB, unused (idx_scan: 0), table unique_case"
+    ],
+    "drops_covering_index_as_redundant": true,
+    "drops_unique_index": true
+  },
+  "i3_index_semantics": {
+    "exit": 0,
+    "unique_and_nonunique_grouped": true,
+    "different_sort_orders_grouped": true
+  },
+  "i2_index_semantics": {
+    "exit": 0,
+    "different_sort_orders_grouped": true
+  },
+  "menu_unquoted_input": {
+    "exit": 0,
+    "injected_readonly_query_executed": true,
+    "sql_errors_present": true
+  },
+  "a2_duration": {
+    "exit": 0,
+    "sleeper_reported": true,
+    "negative_duration": true
+  },
+  "p1_other_database": {
+    "exit": 0,
+    "error": ""
+  },
+  "completed": true,
+  "i2_unique_prefix": {
+    "exit": 0,
+    "rows": [
+      "audit_indexes | unique_prefix |           368640 | unique_prefix_a   | btree         | audit_indexes.unique_prefix_pkey | CREATE UNIQUE INDEX unique_prefix_pkey ON audit_indexes.unique_prefix USING btree (a, b) | 240 kB          | CREATE UNIQUE INDEX unique_prefix_a ON audit_indexes.unique_prefix USING btree (a) |           245760 |           0 | f"
+    ],
+    "unique_a_reported_as_redundant_to_primary_ab": true
+  },
+  "i5_column_prefix": {
+    "exit": 0,
+    "drops": [
+      "DROP INDEX CONCURRENTLY audit_indexes.column_prefix_10; -- 240 kB, redundant to index: \"audit_indexes.column_prefix_1\", table audit_indexes.column_prefix",
+      "DROP INDEX CONCURRENTLY audit_indexes.column_prefix_1; -- 240 kB, unused (idx_scan: 0), table column_prefix",
+      "DROP INDEX CONCURRENTLY audit_indexes.column_prefix_10; -- 240 kB, unused (idx_scan: 0), table column_prefix"
+    ],
+    "different_columns_reported_as_redundant": true
+  },
+  "i5_integrity_impact": {
+    "exit": 0,
+    "duplicate_accepted_after_suggested_drop": true
+  }
+}

@@ -192,20 +192,51 @@ and include both shared and local I/O timing on PostgreSQL 17 and newer.
   `pg_monitor`. Some server objects can still require ownership or additional
   privileges.
 
+### Diagnostic profile and state-changing reports
+
+For routine diagnostics in client environments, connect with a role that has
+`pg_monitor` (plus `CONNECT` on the database and `SELECT` on the tables to be
+inspected). Every report except the ones below only reads catalogs and
+statistics views.
+
+| Report | Effect | Required privilege |
+| --- | --- | --- |
+| **k1** | Cancels the statement of a backend (`pg_cancel_backend`) | `pg_signal_backend` or same role |
+| **k2** | Terminates a backend (`pg_terminate_backend`) | `pg_signal_backend` or same role |
+| **u1** | Creates a role with a generated password | `CREATEROLE` (superuser to grant `SUPERUSER`) |
+| **u2** | Changes a role's password, `SUPERUSER` and `LOGIN` attributes | `CREATEROLE` (superuser for `SUPERUSER`) |
+| **b3**, **b4** | Full scans of tables/indexes with `pgstattuple` (I/O cost) | `pg_stat_scan_tables` |
+| **b6** | Approximate scan with `pgstattuple_approx` (lower I/O cost) | `pg_stat_scan_tables` |
+
+**i5** only prints `DROP INDEX` / `CREATE INDEX` statements; it never executes
+them. **i2**, **i3** and **i5** treat an index as redundant only when another
+index of the same table provides the same keys (as a prefix, for btree),
+operator classes, collations, ordering, INCLUDE columns, expressions,
+predicate and, for unique indexes, the same uniqueness guarantee. Primary
+keys and indexes backing constraints are never suggested for removal. Review
+the suggestions, usage on replicas and query plans before dropping anything.
+
 ### Interactive and automated reports
 
 The menu is interactive by design. When reports are invoked directly in
 automation, pass `--no-psqlrc -v ON_ERROR_STOP=1` and
 `-v postgres_dba_interactive_mode=false`.
 
-- **a2** prompts for a duration in the menu and uses zero seconds in explicit
-  non-interactive mode.
+- **a2** prompts for a number of seconds in the menu (an empty answer means
+  zero) and uses zero seconds in explicit non-interactive mode. The
+  `duration` column shows how long each query has been running, longest
+  first.
 - **b6** prompts for a minimum table size and uses 100 MB in explicit
   non-interactive mode, or when the prompt is answered with an empty line.
 - **k1** and **k2** prompt for a backend PID and can cancel or terminate work.
 - **u1** and **u2** prompt for role attributes and change server state.
-- **k1**, **k2**, **u1** and **u2** are never executed by the automated test
-  job. **b3** and **b4** are also excluded because of their cost.
+- Menu choices and all prompted values are passed to the server as escaped
+  literals. Numeric values (seconds, PIDs) are validated first; invalid input
+  is reported and nothing is executed.
+- **k1**, **k2**, **u1** and **u2** are excluded from the smoke test. The
+  behaviour tests (`test/behavior.sh`) run them only against roles they create
+  and a backend they start in the disposable CI database. **b3** and **b4** are
+  excluded because of their cost.
 
 ### Secure Role Management
 
@@ -215,9 +246,19 @@ automation, pass `--no-psqlrc -v ON_ERROR_STOP=1` and
 - **u2** – Alter user with random password (interactive)
 
 These tools help prevent password exposure in psql history, logs, and command-line process lists by:
-- Generating secure random 16-character passwords
+- Generating 16-character passwords from a cryptographically strong source
+  (`gen_random_uuid()`, backed by `pg_strong_random()`); `setseed()` has no
+  effect on them
 - Using interactive prompts instead of command-line arguments
-- Only displaying the password once at creation/alteration time
+- Never including the password in a server message (`RAISE`), so it does not
+  reach the server log through `log_min_messages`
+- Displaying the password once, through psql output only
+
+Answers to the attribute questions must be explicit: `yes`/`no`, `y`/`n`,
+`1`/`0`, `true`/`false`, `sim`/`não` (or `nao`). Any other answer aborts the
+routine without changes. **u2** always applies both attributes explicitly:
+answering "no" removes `SUPERUSER` or `LOGIN` from a role that had them.
+Role names may contain any characters, including apostrophes.
 
 **Usage example:**
 ```sql
@@ -227,13 +268,17 @@ These tools help prevent password exposure in psql history, logs, and command-li
 --   - Username
 --   - Superuser privilege (yes/no)
 --   - Login privilege (yes/no)
--- The generated password will be displayed once in the output
-
--- To see the password, set client_min_messages to DEBUG first:
-set client_min_messages to DEBUG;
+-- The generated password is printed once at the end
 ```
 
-**Security note:** These are DBA tools designed for trusted environments where the user already has superuser privileges. The password is shown in the psql output, so ensure you're working in a secure session.
+**Security note:** These are DBA tools designed for trusted environments where
+the user already has the privileges to manage roles. The password is shown in
+the psql output, so ensure you're working in a secure session. The executed
+`CREATE ROLE` / `ALTER ROLE` statement contains the password, as it would with
+any client; it is not logged by `log_statement`, but extensions that record
+nested statements (for example `pg_stat_statements` with
+`pg_stat_statements.track = all`, or `auto_explain` with nested statements)
+can capture it. Avoid those settings while running **u1** and **u2**.
 
 ## How to Extend (Add More Queries)
 You can add your own useful SQL queries and use them from the main menu. Just add your SQL code to `./sql` directory. The filename should start with some 1 or 2-letter code, followed by underscore and some additional arbitrary words. Extension should be `.sql`. Example:
