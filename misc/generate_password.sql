@@ -1,20 +1,20 @@
--- WARNING: random() that is used here is not cryptographically strong – 
--- if an attacker knows one value, it's easy to guess the "next" value
--- TODO: rework to use pgcrypto instead
+-- Generates a 16-character password from a cryptographically strong source:
+-- gen_random_uuid() uses pg_strong_random() (PostgreSQL 13+). Bytes 6 and 8
+-- of a UUID carry version/variant bits and are skipped; rejection sampling
+-- keeps every character equally likely.
 
-with init(len, arr) as (
+with init(len, chars) as (
   -- edit password length and possible characters here
-  select 16, string_to_array('123456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ', null)
-), arrlen(l) as (
-  select count(*)
-  from (select unnest(arr) from init) _
-), indexes(i) as (
-  select 1 + int4(random() * (l - 1))
-  from arrlen, (select generate_series(1, len) from init) _
-), res as (
-  select array_to_string(array_agg(arr[i]), '') as password
-  from init, indexes
+  select 16, '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ'
+), random_bytes(n, b) as (
+  select row_number() over (), get_byte(uuid_send(gen_random_uuid()), i)
+  from generate_series(1, 8) uuids, generate_series(0, 15) i
+  where i not in (6, 8)
+), accepted(n, c) as (
+  select n, substr(chars, b % length(chars) + 1, 1)
+  from init, random_bytes
+  where b < 4 * length(chars)
 )
-select password--, 'md5' || md5(password || {{username}}) as password_md5
-from res
+select string_agg(c, '' order by n) as password
+from (select c, n from accepted order by n limit (select len from init)) _
 ;
