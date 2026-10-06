@@ -1,15 +1,22 @@
 #!/bin/bash
 # Generate start.psql based on the contents of "sql" directory
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+set -euo pipefail
 
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ROOT="$( cd "$DIR/.." && pwd )"
+
+# File names as referenced from the generated menu (relative to the repo root).
 WARMUP="warmup.psql"
 OUT="start.psql"
 
-> "$WARMUP"
-> "$OUT"
+# Write to temporary files inside the repository and replace the outputs only
+# after generation succeeds; files in the caller's directory are never touched.
+WARMUP_TMP="$(mktemp "$ROOT/.$WARMUP.XXXXXX")"
+OUT_TMP="$(mktemp "$ROOT/.$OUT.XXXXXX")"
+trap 'rm -f "$WARMUP_TMP" "$OUT_TMP"' EXIT
 
-cd "$DIR/.."
-cat > "$WARMUP" <<- VersCheck
+cd "$ROOT"
+cat > "$WARMUP_TMP" <<- VersCheck
 -- check if "\if" is supported (psql 10+)
 \if false
   \echo cannot work, you need psql version 10+ (Postgres server can be older)
@@ -78,47 +85,49 @@ select current_setting('server_version_num')::integer >= 90600 as postgres_dba_p
 \endif
 VersCheck
 
-echo "\\ir $WARMUP" >> "$OUT"
+echo "\\ir $WARMUP" >> "$OUT_TMP"
 
-echo "\\echo '\\033[1;35mMenu:\\033[0m'" >> "$OUT"
+echo "\\echo '\\033[1;35mMenu:\\033[0m'" >> "$OUT_TMP"
 for f in ./sql/*.sql
 do
   prefix=$(echo $f | sed -e 's/_.*$//g' -e 's/^.*\///g')
   desc=$(head -n1 $f | sed -e 's/^--//g')
-  printf "%s '%4s – %s'\n" "\\echo" "$prefix" "$desc" >> "$OUT"
+  printf "%s '%4s – %s'\n" "\\echo" "$prefix" "$desc" >> "$OUT_TMP"
 done
-printf "%s '%4s – %s'\n" "\\echo" "q" "Quit" >> "$OUT"
-echo "\\echo" >> "$OUT"
-echo "\\echo Type your choice and press <Enter>:" >> "$OUT"
-echo "\\prompt d_step_unq" >> "$OUT"
-echo "\\set d_stp '\\'' :d_step_unq '\\''" >> "$OUT"
-echo "select" >> "$OUT"
+printf "%s '%4s – %s'\n" "\\echo" "q" "Quit" >> "$OUT_TMP"
+echo "\\echo" >> "$OUT_TMP"
+echo "\\echo Type your choice and press <Enter>:" >> "$OUT_TMP"
+echo "\\prompt d_step_unq" >> "$OUT_TMP"
+echo "select" >> "$OUT_TMP"
 
 for f in ./sql/*.sql
 do
   prefix=$(echo $f | sed -e 's/_.*$//g' -e 's/^.*\///g')
-  echo ":d_stp::text = '$prefix' as d_step_is_$prefix," >> "$OUT"
+  echo ":'d_step_unq'::text = '$prefix' as d_step_is_$prefix," >> "$OUT_TMP"
 done
-echo ":d_stp::text = 'q' as d_step_is_q \\gset" >> "$OUT"
+echo ":'d_step_unq'::text = 'q' as d_step_is_q \\gset" >> "$OUT_TMP"
 
-echo "\\if :d_step_is_q" >> "$OUT"
-echo "  \\echo 'Bye!'" >> "$OUT"
-echo "  \\echo" >> "$OUT"
+echo "\\if :d_step_is_q" >> "$OUT_TMP"
+echo "  \\echo 'Bye!'" >> "$OUT_TMP"
+echo "  \\echo" >> "$OUT_TMP"
 for f in ./sql/*.sql
 do
   prefix=$(echo $f | sed -e 's/_.*$//g' -e 's/^.*\///g')
-  echo "\\elif :d_step_is_$prefix" >> "$OUT"
-  echo "  \\ir $f" >> "$OUT"
-  echo "  \\prompt 'Press <Enter> to continue…' d_dummy" >> "$OUT"
-  echo "  \\ir ./$OUT" >> "$OUT"
+  echo "\\elif :d_step_is_$prefix" >> "$OUT_TMP"
+  echo "  \\ir $f" >> "$OUT_TMP"
+  echo "  \\prompt 'Press <Enter> to continue…' d_dummy" >> "$OUT_TMP"
+  echo "  \\ir ./$OUT" >> "$OUT_TMP"
 done
-echo "\\else" >> "$OUT"
-echo "  \\echo" >> "$OUT"
-echo "  \\echo '\\033[1;31mError:\\033[0m Unknown option! Try again.'" >> "$OUT"
-echo "  \\echo" >> "$OUT"
-echo "  \\ir ./$OUT" >> "$OUT"
-echo "\\endif" >> "$OUT"
+echo "\\else" >> "$OUT_TMP"
+echo "  \\echo" >> "$OUT_TMP"
+echo "  \\echo '\\033[1;31mError:\\033[0m Unknown option! Try again.'" >> "$OUT_TMP"
+echo "  \\echo" >> "$OUT_TMP"
+echo "  \\ir ./$OUT" >> "$OUT_TMP"
+echo "\\endif" >> "$OUT_TMP"
+
+chmod 644 "$WARMUP_TMP" "$OUT_TMP"
+mv -f "$WARMUP_TMP" "$ROOT/$WARMUP"
+mv -f "$OUT_TMP" "$ROOT/$OUT"
+trap - EXIT
 
 echo "Done."
-cd ->/dev/null
-exit 0
