@@ -1,0 +1,42 @@
+schema: 1
+story: '1.1'
+gate: PASS
+status_reason: 'All 9 acceptance criteria are met and traced to behaviour tests or reviewed docs; the two high issues from iteration 1 (REL-001, SEC-001) are fixed and covered by tests.'
+reviewer: 'Quinn'
+reviewed_revision: 'commit:9ae27f6'
+updated: '2026-10-06T21:15:00-03:00'
+top_issues: []
+resolved_issues:
+  - id: 'REL-001'
+    severity: high
+    finding: 'Explicit NOSUPERUSER made u2 fail for non-superuser CREATEROLE operators (must be superuser to change superuser attribute).'
+    resolution: 'NOSUPERUSER emitted only for roles that are currently superusers; tested as a CREATEROLE operator.'
+  - id: 'SEC-001'
+    severity: high
+    finding: 'A failed CREATE/ALTER ROLE showed the statement, including the password, as error CONTEXT on the client and in the server log.'
+    resolution: 'EXECUTE wrapped in a handler that re-raises SQLSTATE and message only; tested for u1 and u2.'
+residual_risks:
+  - 'The executed CREATE/ALTER ROLE contains the password, so pg_stat_statements.track = all or auto_explain with nested statements can capture it (documented in README).'
+trace:
+  - ac: 1
+    tests: ['test/behavior.sh: i2 reports exactly the expected redundant indexes', 'i3 groups only fully identical indexes', 'i5 suggests/never drops/UNDO checks', 'uniqueness preserved after applying i5', 'intarray installed for the index tests']
+  - ac: 2
+    tests: ['test/behavior.sh: u2 removes/grants SUPERUSER and LOGIN', 'u2 run by a CREATEROLE operator applies NOLOGIN']
+  - ac: 3
+    tests: ['test/behavior.sh: u1/u2 reject an unknown answer without changes', 'u1 accepts nao/sim']
+  - ac: 4
+    tests: ['test/behavior.sh: passwords do not depend on setseed()', 'u1 never sends the password in a server message', 'u1/u2 errors do not reveal the generated password']
+  - ac: 5
+    tests: ['test/behavior.sh: menu, a2, k1, k2 reject and do not execute injected input', 'u1 accepts a role name containing an apostrophe']
+  - ac: 6
+    tests: ['test/behavior.sh: generator leaves caller files untouched, is idempotent, leaves no temporary files']
+  - ac: 7
+    tests: ['test/behavior.sh: a2 shows a positive duration', 'a2 filters by the number of seconds typed']
+  - ac: 8
+    tests: ['.github/workflows/test.yml: Run behaviour tests (matrix PostgreSQL 14-18)']
+  - ac: 9
+    tests: ['test: manual — README content reviewed by QA against the implemented behaviour (role management, input rules, pg_monitor profile, state-changing reports)']
+evidence:
+  - 'Local: test/behavior.sh 39/39 on PostgreSQL 14, 16 and 18 at 9ae27f6; the 6 new role checks fail against the pre-fix scripts.'
+  - 'CI run 37548367524 green on PostgreSQL 14-18 at cb44849 (before the role fix).'
+waiver: { active: false }
