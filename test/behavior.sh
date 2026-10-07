@@ -34,7 +34,8 @@ cleanup() {
   sql "drop schema if exists $SCHEMA cascade" > /dev/null 2>&1
   sql "drop table if exists public.postgres_dba_injection_marker" > /dev/null 2>&1
   sql "drop role if exists \"postgres_dba_o'test\", postgres_dba_invalid, postgres_dba_alter,
-    postgres_dba_seed1, postgres_dba_seed2" > /dev/null 2>&1
+    postgres_dba_seed1, postgres_dba_seed2, postgres_dba_target, postgres_dba_op_created,
+    postgres_dba_operator" > /dev/null 2>&1
   sql "select pg_terminate_backend(pid) from pg_stat_activity where application_name like 'postgres_dba_behavior%'" > /dev/null 2>&1
   [[ "${created_intarray:-false}" == true ]] && sql "drop extension if exists intarray" > /dev/null 2>&1
   set -e
@@ -169,6 +170,43 @@ check "u2 grants SUPERUSER and LOGIN when the answers are yes" \
 output=$(printf 'postgres_dba_alter\nnope\nno\n' | psql --no-psqlrc -f sql/u2_alter_user_with_random_password.sql 2>&1)
 check "u2 rejects an unknown answer without changing the role" \
   [ "$(sql "select rolsuper::text || rolcanlogin::text from pg_roles where rolname = 'postgres_dba_alter'")" == "truetrue" ]
+
+# A CREATEROLE operator (not superuser) must be able to use u1/u2 on ordinary roles.
+sql "create role postgres_dba_operator createrole login; create role postgres_dba_target login" > /dev/null
+if (( server_version_num >= 160000 )); then
+  sql "grant postgres_dba_target to postgres_dba_operator with admin option" > /dev/null
+fi
+output=$(printf 'postgres_dba_target
+no
+no
+' \
+  | "${PSQL[@]}" -U postgres_dba_operator -f sql/u2_alter_user_with_random_password.sql 2>&1 || true)
+check "u2 lets a CREATEROLE operator rotate an ordinary role's password" grep -q 'altered' <<< "$output"
+check "u2 run by a CREATEROLE operator applies NOLOGIN" \
+  [ "$(sql "select rolsuper::text || rolcanlogin::text from pg_roles where rolname = 'postgres_dba_target'")" == "falsefalse" ]
+output=$(printf 'postgres_dba_op_created
+no
+yes
+' \
+  | "${PSQL[@]}" -U postgres_dba_operator -f sql/u1_create_user_with_random_password.sql 2>&1 || true)
+check "u1 lets a CREATEROLE operator create an ordinary role" \
+  [ "$(sql "select rolsuper::text || rolcanlogin::text from pg_roles where rolname = 'postgres_dba_op_created'")" == "falsetrue" ]
+
+# A failing CREATE/ALTER ROLE must not echo the statement (and its password).
+output=$(printf 'postgres_dba_target
+yes
+yes
+' \
+  | psql --no-psqlrc -U postgres_dba_operator -f sql/u2_alter_user_with_random_password.sql 2>&1)
+check "u2 refuses SUPERUSER for a non-superuser operator" \
+  [ "$(sql "select rolsuper::text from pg_roles where rolname = 'postgres_dba_target'")" == "false" ]
+check "u2 errors do not reveal the generated password" bash -c '! grep -qi "password '"'"'" <<< "$1"' _ "$output"
+output=$(printf 'postgres_dba_target
+no
+no
+' | psql --no-psqlrc -f sql/u1_create_user_with_random_password.sql 2>&1)
+check "u1 errors do not reveal the generated password" \
+  bash -c 'grep -q "already exists" <<< "$1" && ! grep -qi "password '"'"'" <<< "$1"' _ "$output"
 
 seed_password() {
   printf '%s\nno\nno\n' "$1" \
